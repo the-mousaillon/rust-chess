@@ -1,9 +1,22 @@
-use super::chessbord::ChessBoard;
+use super::chessbord::{
+    ChessBoard,
+    CellRepr,
+    PieceRepr
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Color {
     Black,
     White,
+}
+
+impl Color {
+    pub fn webapp_repr(&self) -> String {
+        match self {
+            Self::Black => "BLACK".into(),
+            Self::White => "WHITE".into()
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -68,9 +81,64 @@ impl Piece {
             _ => false
         }
     }
+
+    pub fn webapp_repr(&self) -> CellRepr {
+        let color = self.color();
+        match self {
+            Piece::King(p) => CellRepr {
+                piece: PieceRepr {
+                    idx: Some(0),
+                    color: color.map(|c| c.webapp_repr()),
+                    name: Some("KING".into())
+                }
+            },
+            Piece::Queen(p) => CellRepr {
+                piece: PieceRepr {
+                    idx: Some(1),
+                    color: color.map(|c| c.webapp_repr()),
+                    name: Some("QUEEN".into())
+                }
+            },
+            Piece::Rook(p) => CellRepr {
+                piece: PieceRepr {
+                    idx: Some(2),
+                    color: color.map(|c| c.webapp_repr()),
+                    name: Some("ROOK".into())
+                }
+            },
+            Piece::Bishop(p) => CellRepr {
+                piece: PieceRepr {
+                    idx: Some(3),
+                    color: color.map(|c| c.webapp_repr()),
+                    name: Some("BISHOP".into())
+                }
+            },
+            Piece::Knight(p) => CellRepr {
+                piece: PieceRepr {
+                    idx: Some(4),
+                    color: color.map(|c| c.webapp_repr()),
+                    name: Some("KNIGHT".into())
+                }
+            },
+            Piece::Pawn(p) => CellRepr {
+                piece: PieceRepr {
+                    idx: Some(5),
+                    color: color.map(|c| c.webapp_repr()),
+                    name: Some("PAWN".into())
+                }
+            },
+            Piece::Empty => CellRepr {
+                piece: PieceRepr {
+                    idx: Some(10),
+                    color: color.map(|c| c.webapp_repr()),
+                    name: Some("EMPTY".into())
+                }
+            },
+        }
+    }
 }
 
-pub type Position = (u8, u8);
+pub type Position = (i8, i8);
 
 
 //// MOVES 
@@ -87,8 +155,12 @@ pub enum Move {
 impl Move {
     // This function should be called only for move or take moves. Castling and en passant would make this function pannic
     pub fn new(p: &impl PieceCommon, board: &ChessBoard, to: Position) -> Self {
+        if to.0 < 0 || to.0 > 7 || to.1 < 0 || to.1 > 7 {
+            return Move::Invalid
+        }
         let dst = &board.board[to.0 as usize][to.1 as usize];
         // If we try to move in our own piece, the move is invalid
+        println!("dst: {:?}", dst);
         if !dst.is_empty() && (dst.color().unwrap() == p.color()) {
             return Move::Invalid
         }
@@ -100,20 +172,23 @@ impl Move {
     }
 }
 
-fn diag_line_generic(p: &impl PieceCommon, board: &ChessBoard, n_travel: u8, pos_trans: impl Fn(u8) -> Position) -> Vec<Move> {
+fn diag_line_generic(p: &impl PieceCommon, board: &ChessBoard, n_travel: i8, pos_trans: impl Fn(i8) -> Position) -> Vec<Move> {
     let mut moves = vec!();
-    for i in 0..n_travel {
+    for i in 1..n_travel {
         let to = pos_trans(i);
         let move_ = Move::new(p, board, to);
         match move_ {
             Move::Move(_, _) =>{
+                println!("MOVE");
                 moves.push(move_);
             },
             Move::Take(_, _) => {
+                println!("TAKE");
                 moves.push(move_);
                 break
             },
             Move::Invalid => {
+                println!("INVALID");
                 break
             }
             _ => panic!("This case shoud never happn, check the code")
@@ -124,8 +199,8 @@ fn diag_line_generic(p: &impl PieceCommon, board: &ChessBoard, n_travel: u8, pos
 
 fn line_left(p: &impl PieceCommon, board: &ChessBoard) -> Vec<Move> {
     let pos = p.position();
-    let n_travel = pos.1;
-    let pos_trans = |i: u8| {
+    let n_travel = pos.1 + 1;
+    let pos_trans = |i: i8| {
         (pos.0, pos.1 - i)
     };
     diag_line_generic(p, board, n_travel, pos_trans)
@@ -133,8 +208,8 @@ fn line_left(p: &impl PieceCommon, board: &ChessBoard) -> Vec<Move> {
 
 fn line_right(p: &impl PieceCommon, board: &ChessBoard) -> Vec<Move> {
     let pos = p.position();
-    let n_travel = pos.1;
-    let pos_trans = |i: u8| {
+    let n_travel = 8 - pos.1;
+    let pos_trans = |i: i8| {
         (pos.0, pos.1 + i)
     };
     diag_line_generic(p, board, n_travel, pos_trans)
@@ -142,8 +217,8 @@ fn line_right(p: &impl PieceCommon, board: &ChessBoard) -> Vec<Move> {
 
 fn line_up(p: &impl PieceCommon, board: &ChessBoard) -> Vec<Move> {
     let pos = p.position();
-    let n_travel = pos.1;
-    let pos_trans = |i: u8| {
+    let n_travel = pos.0 + 1;
+    let pos_trans = |i: i8| {
         (pos.0 - i, pos.1)
     };
     diag_line_generic(p, board, n_travel, pos_trans)
@@ -151,17 +226,17 @@ fn line_up(p: &impl PieceCommon, board: &ChessBoard) -> Vec<Move> {
 
 fn line_down(p: &impl PieceCommon, board: &ChessBoard) -> Vec<Move> {
     let pos = p.position();
-    let n_travel = pos.1;
-    let pos_trans = |i: u8| {
-        (pos.0 + 1, pos.1)
+    let n_travel = 8 - pos.0;
+    let pos_trans = |i: i8| {
+        (pos.0 + i, pos.1)
     };
     diag_line_generic(p, board, n_travel, pos_trans)
 }
 
 fn diag_left_up(p: &impl PieceCommon, board: &ChessBoard) -> Vec<Move> {
     let pos = p.position();
-    let n_travel = pos.1;
-    let pos_trans = |i: u8| {
+    let n_travel = std::cmp::min(pos.1 + 1, pos.0 + 1);
+    let pos_trans = |i: i8| {
         (pos.0 - i, pos.1 - i)
     };
     diag_line_generic(p, board, n_travel, pos_trans)
@@ -169,8 +244,8 @@ fn diag_left_up(p: &impl PieceCommon, board: &ChessBoard) -> Vec<Move> {
 
 fn diag_right_up(p: &impl PieceCommon, board: &ChessBoard) -> Vec<Move> {
     let pos = p.position();
-    let n_travel = pos.1;
-    let pos_trans = |i: u8| {
+    let n_travel = std::cmp::min(8 - pos.1, pos.0 + 1);
+    let pos_trans = |i: i8| {
         (pos.0 - i, pos.1 + i)
     };
     diag_line_generic(p, board, n_travel, pos_trans)
@@ -178,8 +253,8 @@ fn diag_right_up(p: &impl PieceCommon, board: &ChessBoard) -> Vec<Move> {
 
 fn diag_left_down(p: &impl PieceCommon, board: &ChessBoard) -> Vec<Move> {
     let pos = p.position();
-    let n_travel = pos.1;
-    let pos_trans = |i: u8| {
+    let n_travel =  std::cmp::min(pos.1 + 1, 8 - pos.0);
+    let pos_trans = |i: i8| {
         (pos.0 + i, pos.1 - i)
     };
     diag_line_generic(p, board, n_travel, pos_trans)
@@ -187,8 +262,8 @@ fn diag_left_down(p: &impl PieceCommon, board: &ChessBoard) -> Vec<Move> {
 
 fn diag_right_down(p: &impl PieceCommon, board: &ChessBoard) -> Vec<Move> {
     let pos = p.position();
-    let n_travel = pos.1;
-    let pos_trans = |i: u8| {
+    let n_travel =  std::cmp::min(8 - pos.1, 8 - pos.0);
+    let pos_trans = |i: i8| {
         (pos.0 + i, pos.1 + i)
     };
     diag_line_generic(p, board, n_travel, pos_trans)
@@ -211,6 +286,7 @@ pub trait PieceCommon {
 pub struct Pawn {
     color: Color,
     position: Position,
+    has_moved: bool
 }
 
 impl PieceCommon for Pawn {
@@ -218,6 +294,7 @@ impl PieceCommon for Pawn {
         Self {
             color: color,
             position: p,
+            has_moved: false
         }
     }
 
@@ -229,8 +306,25 @@ impl PieceCommon for Pawn {
         self.position.clone()
     }
 
+    // Pawn moves are actually the hardest to generate
     fn gen_moves(&self, board: &ChessBoard) -> Vec<Move> {
-        vec![]
+        let mut moves = vec!();
+        let pos = self.position();
+        let direction = match &self.color {
+            &Color::Black => 1,
+            &Color::White => -1
+        };
+        // The basic move
+        moves.push(Move::new(self, board, (pos.0 + direction, pos.1)));
+
+        // If the game starts, we can move two squares
+        if !self.has_moved {
+            moves.push(Move::new(self, board, (pos.0 + direction * 2, pos.1)));
+        }
+
+        // Then we have enpassant, the most complicated one (and rarest aswell, very annoying)
+
+        moves
     }
 
     fn emoji_repr(&self) -> &'static str {
@@ -435,7 +529,7 @@ impl PieceCommon for King {
             Move::new(self, board, (self.position.0, self.position.1 + 1)),
             Move::new(self, board, (self.position.0, self.position.1 - 1)),
             Move::new(self, board, (self.position.0 + 1, self.position.1)),
-            Move::new(self, board, (self.position.0 + 1, self.position.1)),
+            Move::new(self, board, (self.position.0 - 1, self.position.1)),
             // Diags
             Move::new(self, board, (self.position.0 + 1, self.position.1 + 1)),
             Move::new(self, board, (self.position.0 + 1, self.position.1 - 1)),

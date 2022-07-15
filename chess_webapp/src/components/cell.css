@@ -1,0 +1,13 @@
+.whiteCell {
+    padding-top: 12px;
+    background-color: white;
+  }
+  
+  .blackCell {
+    padding-top: 12px;
+    background-color: lightblue;
+  }
+  
+  .threatened{
+      border: 1px solid red;
+  }

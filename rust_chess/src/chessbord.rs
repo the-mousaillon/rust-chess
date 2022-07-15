@@ -11,8 +11,39 @@ use super::piece::{
     Knight,
     Pawn,
     Bishop,
-    Queen
+    Queen,
+    Move
 };
+
+use serde::{Serialize, Deserialize};
+
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+pub struct PieceRepr {
+    pub idx: Option<usize>,
+    pub color: Option<String>,
+    pub name: Option<String>
+}
+
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+pub struct CellRepr {
+    pub piece: PieceRepr
+}
+
+#[derive(Default, Debug, Serialize, Deserialize)]
+pub struct WebappRepr {
+    pub board: Vec<Vec<CellRepr>>
+}
+
+impl WebappRepr {
+    pub fn new() -> Self {
+        Self {
+            board: vec![vec![CellRepr::default(); 8] ;8]
+        }
+    }
+}
+
 
 pub fn empty_board() -> Vec<Vec<Piece>> {
     (0..8).map(|_|
@@ -34,7 +65,7 @@ pub fn initial_board() -> Vec<Vec<Piece>> {
     board[0][7] = Piece::Rook(Rook::new((0, 7), Color::Black));
     // Pawns
     for i in 0..8 {
-        board[1][i] = Piece::Pawn(Pawn::new((1, i as u8), Color::Black));
+        board[1][i] = Piece::Pawn(Pawn::new((1, i as i8), Color::Black));
     }
 
     // White faction
@@ -49,7 +80,7 @@ pub fn initial_board() -> Vec<Vec<Piece>> {
     board[7][7] = Piece::Rook(Rook::new((7, 7), Color::White));
     //Pawns
     for i in 0..8 {
-        board[6][i] = Piece::Pawn(Pawn::new((1, i as u8), Color::White));
+        board[6][i] = Piece::Pawn(Pawn::new((1, i as i8), Color::White));
     }
 
     board
@@ -75,6 +106,14 @@ impl ChessBoard {
         board
     }
 
+    pub fn new_empty() -> Self {
+        Self {
+            board: empty_board(),
+            white_faction: HashMap::new(),
+            black_faction: HashMap::new(),
+        }
+    }
+
     pub fn collect_factions(&mut self) {
         self.black_faction.clear();
         self.white_faction.clear();
@@ -82,10 +121,10 @@ impl ChessBoard {
             for j in 0..8 {
                 match self.board[i][j].color() {
                     Some(Color::White) => {
-                        self.white_faction.insert((i as u8, j as u8), self.board[i][j].clone());
+                        self.white_faction.insert((i as i8, j as i8), self.board[i][j].clone());
                     },
                     Some(Color::Black) => {
-                        self.black_faction.insert((i as u8, j as u8), self.board[i][j].clone());
+                        self.black_faction.insert((i as i8, j as i8), self.board[i][j].clone());
                     },
                     _ => {}
                 }
@@ -106,10 +145,113 @@ impl ChessBoard {
             println!("{}", sep_row);
         }
     }
+
+    pub fn to_webapp(&self) -> WebappRepr {
+        let mut repr = WebappRepr::new();
+        for i in 0..8 {
+            for j in 0..8 {
+                repr.board[i][j] = self.board[i][j].webapp_repr();
+            }
+        }
+        repr
+    }
 }
 
 #[test]
 fn intial_board() {
     let board = ChessBoard::new_default();
     board.pprint();
+}
+
+pub fn apply_markers(board: &mut WebappRepr, moves: &Vec<Move>) {
+    for m in moves {
+        match m {
+            Move::Move(f, t) => {
+                board.board[t.0 as usize][t.1 as usize].piece.idx = Some(6);
+            }
+            Move::Take(f, t) => {
+                board.board[t.0 as usize][t.1 as usize].piece.idx = Some(6);
+            },
+            Move::Invalid => {
+
+            },
+            _ => todo!()
+        }
+    }
+}
+
+
+#[test]
+fn gen_king_moves() {
+    let mut board = ChessBoard::new_empty();
+    board.board[3][3] = Piece::King(King::new((3, 3), Color::White));
+    let moves = match &board.board[3][3] {
+        Piece::King(k) => k.gen_moves(&board),
+        _ => panic!("not a king")
+    };
+    let mut board_repr = board.to_webapp();
+    apply_markers(&mut board_repr, &moves);
+    let board_serialized = serde_json::to_string(&board_repr).unwrap();
+    println!("repr: {:?}", board_repr);
+    cli_clipboard::set_contents(board_serialized);
+}
+
+
+#[test]
+fn gen_queen_moves() {
+    let rand_x: f64 = rand::random();
+    let rand_y: f64 = rand::random();
+    let rand_x = (8.0 * rand_x).floor() as i8;
+    let rand_y = (8.0 * rand_y).floor() as i8;
+    let mut board = ChessBoard::new_empty();
+    board.board[rand_x as usize][rand_y as usize] = Piece::Queen(Queen::new((rand_x, rand_y), Color::White));
+    let moves = match &board.board[rand_x as usize][rand_y as usize] {
+        Piece::Queen(q) => q.gen_moves(&board),
+        _ => panic!("not a king")
+    };
+    let mut board_repr = board.to_webapp();
+    apply_markers(&mut board_repr, &moves);
+    let board_serialized = serde_json::to_string(&board_repr).unwrap();
+    println!("moves: {:?}", moves);
+    cli_clipboard::set_contents(board_serialized);
+}
+
+
+#[test]
+fn gen_knight_moves() {
+    let rand_x: f64 = rand::random();
+    let rand_y: f64 = rand::random();
+    let rand_x = (8.0 * rand_x).floor() as i8;
+    let rand_y = (8.0 * rand_y).floor() as i8;
+    let mut board = ChessBoard::new_empty();
+    board.board[rand_x as usize][rand_y as usize] = Piece::Knight(Knight::new((rand_x, rand_y), Color::White));
+    let moves = match &board.board[rand_x as usize][rand_y as usize] {
+        Piece::Knight(q) => q.gen_moves(&board),
+        _ => panic!("not a king")
+    };
+    let mut board_repr = board.to_webapp();
+    apply_markers(&mut board_repr, &moves);
+    let board_serialized = serde_json::to_string(&board_repr).unwrap();
+    println!("moves: {:?}", moves);
+    cli_clipboard::set_contents(board_serialized);
+}
+
+
+#[test]
+fn gen_pawn_moves() {
+    let rand_x: f64 = rand::random();
+    let rand_y: f64 = rand::random();
+    let rand_x = (8.0 * rand_x).floor() as i8;
+    let rand_y = (8.0 * rand_y).floor() as i8;
+    let mut board = ChessBoard::new_empty();
+    board.board[rand_x as usize][rand_y as usize] = Piece::Pawn(Pawn::new((rand_x, rand_y), Color::White));
+    let moves = match &board.board[rand_x as usize][rand_y as usize] {
+        Piece::Pawn(q) => q.gen_moves(&board),
+        _ => panic!("not a king")
+    };
+    let mut board_repr = board.to_webapp();
+    apply_markers(&mut board_repr, &moves);
+    let board_serialized = serde_json::to_string(&board_repr).unwrap();
+    println!("moves: {:?}", moves);
+    cli_clipboard::set_contents(board_serialized);
 }
