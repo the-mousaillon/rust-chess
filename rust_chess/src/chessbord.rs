@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::piece::Color;
 
@@ -102,6 +102,14 @@ pub fn apply_markers(board: &mut WebappRepr, moves: &Vec<Move>) {
                 board.board[to.0 as usize][to.1 as usize].piece.idx = Some(6);
                 board.board[pos.0 as usize][pos.1 as usize].threatened = true;
             }
+            Move::KingsideCastle(c) => {
+                let to = m.to().unwrap();
+                board.board[to.0 as usize][to.1 as usize].piece.idx = Some(6);
+            }
+            Move::QueensideCastle(c) => {
+                let to = m.to().unwrap();
+                board.board[to.0 as usize][to.1 as usize].piece.idx = Some(6);
+            }
             Move::Invalid => {
 
             },
@@ -112,10 +120,14 @@ pub fn apply_markers(board: &mut WebappRepr, moves: &Vec<Move>) {
 
 #[derive(Clone, Debug)]
 pub struct Faction {
-    black_pieces_by_pos: HashMap<Position, Piece>,
-    black_pieces_by_type: HashMap<PieceType, Piece>,
-    white_pieces_by_pos: HashMap<Position, Piece>,
-    white_pieces_by_type: HashMap<PieceType, Piece>
+    // Piece lists
+    pub black_pieces_by_pos: HashMap<Position, Piece>,
+    pub black_pieces_by_type: HashMap<PieceType, Piece>,
+    pub white_pieces_by_pos: HashMap<Position, Piece>,
+    pub white_pieces_by_type: HashMap<PieceType, Piece>,
+    // Controled squares for each factions
+    pub black_controlled: HashSet<Position>,
+    pub white_controlled: HashSet<Position>
 }
 
 impl Faction {
@@ -124,7 +136,9 @@ impl Faction {
             black_pieces_by_pos: HashMap::new(),
             black_pieces_by_type: HashMap::new(),
             white_pieces_by_pos: HashMap::new(),
-            white_pieces_by_type: HashMap::new() 
+            white_pieces_by_type: HashMap::new(),
+            black_controlled: HashSet::new(),
+            white_controlled: HashSet::new()
         }
     }
 
@@ -210,6 +224,38 @@ impl ChessBoard {
         }
     }
 
+    pub fn update_controlled_squares(&mut self, faction: Color) {
+        match faction {
+            Color::Black => {
+                let mut black_controlled = HashSet::new();
+                for (_, bp) in self.faction.black_pieces_by_pos.iter() {
+                    black_controlled.extend(bp.get_controlled_squares(self));
+                }
+                self.faction.black_controlled = black_controlled;
+            },
+            Color::White => {
+                let mut white_controlled = HashSet::new();
+                for (_, wp) in self.faction.white_pieces_by_pos.iter() {
+                    white_controlled.extend(wp.get_controlled_squares(self));
+                }
+                self.faction.white_controlled = white_controlled;
+            }
+        }
+    }
+
+    fn castle(&mut self, king_from: Position, king_to: Position, rook_from: Position, rook_to: Position){
+        let mut king = self.board[king_from.0 as usize][king_from.1 as usize].clone();
+        let mut rook = self.board[rook_from.0 as usize][rook_from.1 as usize].clone();
+        king.set_position(king_to);
+        rook.set_position(rook_to);
+        self.faction.upsert(king.clone());
+        self.faction.upsert(rook.clone());
+        self.board[king_from.0 as usize][king_from.1 as usize] = Piece::Empty;
+        self.board[rook_from.0 as usize][rook_from.1 as usize] = Piece::Empty;
+        self.board[king_to.0 as usize][king_to.1 as usize] = king;
+        self.board[rook_to.0 as usize][rook_to.1 as usize] = rook;
+    }
+
     pub fn play(&mut self, moves: Vec<Move>) {
         for m in moves {
             match m {
@@ -218,14 +264,18 @@ impl ChessBoard {
                     p.set_position(to.clone());
                     self.faction.upsert(p.clone());
                     self.board[from.0 as usize][from.1 as usize] = Piece::Empty;
+                    let piece_color = p.color().unwrap();
                     self.board[to.0 as usize][to.1 as usize] = p;
+                    self.update_controlled_squares(piece_color);
                 },
                 Move::Move(from, to) => {
                     let mut p = self.board[from.0 as usize][from.1 as usize].clone();
                     p.set_position(to.clone());
                     self.faction.upsert(p.clone());
                     self.board[from.0 as usize][from.1 as usize] = Piece::Empty;
+                    let piece_color = p.color().unwrap();
                     self.board[to.0 as usize][to.1 as usize] = p;
+                    self.update_controlled_squares(piece_color);
                 },
                 Move::EnPassant(from, to) => {
                     let mut p = self.board[from.0 as usize][from.1 as usize].clone();
@@ -233,15 +283,34 @@ impl ChessBoard {
                     self.faction.upsert(p.clone());
                     self.board[from.0 as usize][from.1 as usize] = Piece::Empty;
                     self.board[from.0 as usize][to.1 as usize] = Piece::Empty;
+                    let piece_color = p.color().unwrap();
                     self.board[to.0 as usize][to.1 as usize] = p;
+                    self.update_controlled_squares(piece_color);
                 },
                 Move::KingsideCastle(faction) => {
-                    todo!()
+                    match faction {
+                        Color::White => {
+                            self.castle((7, 4), (7, 6), (7, 7), (7, 5))
+                        }
+                        Color::Black => {
+                            self.castle((0, 3), (0, 1), (0, 0), (0, 2))
+                        }
+                    }
+                    self.update_controlled_squares(faction);
                 },
                 Move::QueensideCastle(faction) => {
-                    todo!()
+                    match faction {
+                        Color::White => {
+                            self.castle((7, 4), (7, 2), (7, 0), (7, 3))
+                        }
+                        Color::Black => {
+                            self.castle((0, 3), (0, 5), (0, 7), (0, 4))
+                        }
+                    }
+                    self.update_controlled_squares(faction);
                 },
                 _ => {}
+                // We update the controled squares for each faction
             }
         }
     }

@@ -1,6 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde::{Serialize, Deserialize};
+
+use crate::chessbord::Faction;
 
 use super::chessbord::{
     ChessBoard,
@@ -103,6 +105,17 @@ impl Piece {
             Piece::Empty => true,
             _ => false
         }
+    }
+
+    // We lose a bit of efficiency since we generate each moves twice, but it makes code tighter and simpler
+    pub fn get_controlled_squares(&self, board: &ChessBoard) -> Vec<Position> {
+        let mut controlled = vec!();
+        for m in self.gen_moves(board) {
+            if let Move::Move(_, to) = m {
+                controlled.push(to)
+            }
+        }
+        controlled
     }
 
     pub fn gen_moves(&self, board: &ChessBoard) -> Vec<Move> {
@@ -281,6 +294,14 @@ impl Move {
             Self::Move(_, to) => Some(to.clone()),
             Self::Take(_, to) => Some(to.clone()),
             Self::EnPassant(_, to) => Some(to.clone()),
+            Self::KingsideCastle(c) => match c {
+                Color::Black => Some((0, 1)),
+                Color::White => Some((7, 6))
+            },
+            Self::QueensideCastle(c) => match c {
+                Color::Black => Some((0, 6)),
+                Color::White => Some((7, 1))                
+            }
             _ => None
         }
     }
@@ -748,11 +769,10 @@ impl AttackVector {
 pub struct King {
     color: Color,
     position: Position,
-    has_moved: bool
+    has_moved: bool,
 }
 
 impl King {
-
     fn generic_attack_vector(&self, board: &ChessBoard, direction: &VectorDirection) -> Option<AttackVector> {
         let mut current_defender: &Piece;
         let mut n_defenders = 0;
@@ -816,7 +836,7 @@ impl PieceCommon for King {
 
     fn gen_moves(&self, board: &ChessBoard) -> Vec<Move> {
         // Ad-hoc moves
-        vec![
+        let mut moves = vec![
             // Lines
             Move::new(self, board, (self.position.0, self.position.1 + 1)),
             Move::new(self, board, (self.position.0, self.position.1 - 1)),
@@ -827,7 +847,56 @@ impl PieceCommon for King {
             Move::new(self, board, (self.position.0 + 1, self.position.1 - 1)),
             Move::new(self, board, (self.position.0 - 1, self.position.1 + 1)),
             Move::new(self, board, (self.position.0 - 1, self.position.1 - 1)),
-        ]
+        ];
+        if self.has_moved {
+            return moves
+        }
+        let castle_check = |
+            step_size: i8,
+            mult: i8,
+            rook_pos: Position,
+            player_pieces: &HashMap<Position, Piece>,
+            opponent_control: &HashSet<Position>
+        | {
+            let ok_empty = (1..=step_size).all(|i| {
+                let pos = (self.position.0, self.position.1 + i * mult);
+                println!("pos: {:?}, is_empty: {}, opponent control: {}", pos, board.board[pos.0 as usize][pos.1 as usize].is_empty(), opponent_control.contains(&pos));
+                board.board[pos.0 as usize][pos.1 as usize].is_empty() && !opponent_control.contains(&pos)
+            });
+            println!("Condi castle empty: {}, self_moved: {}, rook: {:?}", ok_empty, self.has_moved, player_pieces.get(&rook_pos));
+            match (ok_empty, self.has_moved, player_pieces.get(&rook_pos)) {
+                (true, false, Some(Piece::Rook(r))) if !r.has_moved => {
+                    true
+                }
+                _ => {
+                    false
+                }
+            }
+        };
+
+        match self.color {
+            Color::White => {
+                // Kingside
+                if castle_check(2, 1, (7, 7), &board.faction.white_pieces_by_pos, &board.faction.black_controlled) {
+                    moves.push(Move::KingsideCastle(self.color.clone()));
+                }
+                // queenside
+                if castle_check(3, -1, (7, 0), &board.faction.white_pieces_by_pos, &board.faction.black_controlled) {
+                    moves.push(Move::QueensideCastle(self.color.clone()));
+                }
+            },
+            Color::Black => {
+                // Kingside
+                if castle_check(2, -1, (0, 0), &board.faction.black_pieces_by_pos, &board.faction.white_controlled) {
+                    moves.push(Move::KingsideCastle(self.color.clone()));
+                }
+                // queenside
+                if castle_check(3, 1, (0, 7), &board.faction.black_pieces_by_pos, &board.faction.white_controlled) {
+                    moves.push(Move::QueensideCastle(self.color.clone()));
+                }
+            }
+        }
+        moves
     }
 
     fn emoji_repr(&self) -> &'static str {
