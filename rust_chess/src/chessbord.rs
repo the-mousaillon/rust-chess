@@ -209,6 +209,7 @@ impl Faction {
 pub struct ChessBoard {
     pub board: Vec<Vec<Piece>>,
     pub faction: Faction,
+    pub headstart: Option<Position>
 }
 
 impl ChessBoard {
@@ -217,6 +218,7 @@ impl ChessBoard {
         let mut board = Self {
             board: board,
             faction: Faction::new_empty(),
+            headstart: None
         };
         board.collect_factions();
         board
@@ -225,7 +227,8 @@ impl ChessBoard {
     pub fn new_empty() -> Self {
         Self {
             board: empty_board(),
-            faction: Faction::new_empty()
+            faction: Faction::new_empty(),
+            headstart: None
         }
     }
 
@@ -313,6 +316,8 @@ impl ChessBoard {
 
     // returns the promotion position if the move leads to a promotion
     pub fn play_once(&mut self, m: Move) -> Option<Position> {
+        let mut headstart = None;
+        let mut promotion = None;
         match m {
             Move::Take(from, to) => {
                 let mut p = self.board[from.0 as usize][from.1 as usize].clone();
@@ -324,24 +329,33 @@ impl ChessBoard {
                 self.board[to.0 as usize][to.1 as usize] = p;
                 self.update_controlled_squares(piece_color.clone());
                 match (piece_type, piece_color, to) {
-                    (PieceType::Pawn, Color::Black, to @ (7, _)) => Some(to),
-                    (PieceType::Pawn, Color::White, to @ (0, _)) => Some(to),
-                    _ => None
+                    (PieceType::Pawn, Color::Black, to @ (7, _)) => promotion = Some(to),
+                    (PieceType::Pawn, Color::White, to @ (0, _)) => promotion = Some(to),
+                    _ => {}
                 }
             },
             Move::Move(from, to) => {
                 let mut p = self.board[from.0 as usize][from.1 as usize].clone();
+                // If we have a pawn headstart
+                match p {
+                    Piece::Pawn(ref mut p)if !p.has_moved && (p.position.0 - to.0).abs() == 2 => {
+                        p.headstart = true;
+                        headstart = Some(to)
+                    },
+                    _ => {}
+                }
                 p.set_position(to.clone());
                 self.faction.upsert(p.clone());
                 self.board[from.0 as usize][from.1 as usize] = Piece::Empty;
                 let piece_color = p.color().unwrap();
                 let piece_type = p.get_type().unwrap();
                 self.board[to.0 as usize][to.1 as usize] = p;
+                
                 self.update_controlled_squares(piece_color.clone());
                 match (piece_type, piece_color, to) {
-                    (PieceType::Pawn, Color::Black, to @ (7, _)) => Some(to),
-                    (PieceType::Pawn, Color::White, to @ (0, _)) => Some(to),
-                    _ => None
+                    (PieceType::Pawn, Color::Black, to @ (7, _)) => promotion = Some(to),
+                    (PieceType::Pawn, Color::White, to @ (0, _)) => promotion = Some(to),
+                    _ => {}
                 }
             },
             Move::EnPassant(from, to) => {
@@ -353,7 +367,6 @@ impl ChessBoard {
                 let piece_color = p.color().unwrap();
                 self.board[to.0 as usize][to.1 as usize] = p;
                 self.update_controlled_squares(piece_color);
-                None
             },
             Move::KingsideCastle(faction) => {
                 match faction {
@@ -365,7 +378,6 @@ impl ChessBoard {
                     }
                 }
                 self.update_controlled_squares(faction);
-                None
             },
             Move::QueensideCastle(faction) => {
                 match faction {
@@ -377,7 +389,6 @@ impl ChessBoard {
                     }
                 }
                 self.update_controlled_squares(faction);
-                None
             },
             Move::Promote(from, to_type) => {
                 let piece = &self.board[from.0 as usize][from.1 as usize];
@@ -385,11 +396,12 @@ impl ChessBoard {
                 let piece_id = piece.get_id().unwrap();
                 self.faction.delete(piece);
                 self.board[from.0 as usize][from.1 as usize] = Piece::new(from, piece_color, to_type.into(), piece_id);
-                None
             }
-            _ => None
+            _ => {}
             // We update the controled squares for each faction
         }
+        self.update_headstart(headstart);
+        promotion
     }
 
     pub fn pprint(&self) {
@@ -404,6 +416,19 @@ impl ChessBoard {
             println!("{}", row);
             println!("{}", sep_row);
         }
+    }
+
+    // 1. white headstart -> update(new_p) // Black headstart -> update(new_p) // black otherwise -> update(None)
+    pub fn update_headstart(&mut self, new_p: Option<Position>) {
+        if let Some(p) = self.headstart {
+            match self.board[p.0 as usize][p.1 as usize] {
+                Piece::Pawn(ref mut p) => {
+                    p.headstart = false;
+                },
+                _ => {}
+            }
+        }
+        self.headstart = new_p;
     }
 
     pub fn to_webapp(&self) -> WebappRepr {

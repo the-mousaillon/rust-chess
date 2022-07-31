@@ -207,10 +207,6 @@ impl Piece {
     pub fn set_position(&mut self, pos: Position) {
         match self {
             Piece::Pawn(p) => {
-                p.headstart = false;
-                if !p.has_moved && (p.position.0 - pos.0).abs() == 2 {
-                    p.headstart = true
-                }
                 p.position = pos;
                 p.has_moved = true;
             },
@@ -527,9 +523,9 @@ pub trait PieceCommon {
 pub struct Pawn {
     id: usize,
     color: Color,
-    position: Position,
-    has_moved: bool,
-    headstart: bool,
+    pub position: Position,
+    pub has_moved: bool,
+    pub headstart: bool,
     pin_vector: Option<VectorDirection>
 }
 
