@@ -4,24 +4,30 @@ use actix::prelude::*;
 use actix_web::web;
 use serde::{Serialize, Deserialize};
 
-use crate::{piece::{Color, Position, Piece, Move}, chessbord::{WebappRepr, ChessBoard, apply_markers}};
+use crate::{piece::{Color, Position, Piece, Move, PieceType, CanPromoteTo}, chessbord::{WebappRepr, ChessBoard, apply_markers}};
 
 struct ChessActor {
     board: ChessBoard,
+    board_history: Vec<ChessBoard>,
     current_player: Color,
+    current_history_offset: usize,
     turn: usize,
     current_selection: Option<Piece>,
-    current_moves: HashMap<Position, Move>
+    current_moves: HashMap<Position, Move>,
+    promotion_opt: Option<Position>
 }
 
 impl ChessActor {
     pub fn new() -> Self {
         Self {
             board: ChessBoard::new_default(),
+            board_history: vec!(),
             current_player: Color::White,
             turn: 0,
+            current_history_offset: 0,
             current_selection: None,
-            current_moves: HashMap::new()
+            current_moves: HashMap::new(),
+            promotion_opt: None,
         }
     }
 }
@@ -35,9 +41,21 @@ impl Handler<Play> for ChessActor {
     type Result=Result<WebappRepr, ()>;
 
     fn handle(&mut self, msg: Play, ctx: &mut Self::Context) -> Self::Result {
+        // If the player is promoting and clicks somewhere else than the promotion, we need to rollback
+        if self.promotion_opt.is_some() {
+            self.promotion_opt = None;
+            let prev_board = self.board_history.pop().unwrap();
+            self.board = prev_board;
+            return Ok(self.board.to_webapp())
+        }
+        if self.current_history_offset != 0 {
+            return Err(())
+        }
         if msg.x > 7 || msg.y > 7 {
             return Err(())
         }
+        self.board.reset_pin_vectors(&self.current_player);
+        self.board.locate_king(&self.current_player).gen_attack_vectors(&mut self.board);
         let dst = &self.board.board[msg.x][msg.y];
         println!("dst actix: {:?}", dst);
         let is_empty = dst.is_empty();
@@ -50,12 +68,19 @@ impl Handler<Play> for ChessActor {
                 match play {
                     // The play is valid
                     Some(m) => {
-                        self.board.play(vec![m.clone()]);
-                        self.turn += 1;
-                        match self.current_player {
-                            Color::White => self.current_player = Color::Black,
-                            Color::Black => self.current_player = Color::White,
+                        let curr_board = self.board.clone();
+                        let can_promote = self.board.play_once(m.clone());
+                        if !can_promote.is_some() {
+                            self.turn += 1;
+                            match self.current_player {
+                                Color::White => self.current_player = Color::Black,
+                                Color::Black => self.current_player = Color::White,
+                            }
                         }
+                        else {
+                            self.promotion_opt = can_promote;
+                        }
+                        self.board_history.push(curr_board)
                     },
                     // The play is invalid
                     _ => {}
@@ -95,8 +120,6 @@ impl Handler<Play> for ChessActor {
             _ => return Err(())
         };
         self.board.pprint();
-        let attack_vectors = self.board.locate_king(Color::White).gen_attack_vectors(&self.board);
-        println!("ATTACK VECTORS: {:?}", attack_vectors);
         println!("CURRENT MOVES: {:?}", self.current_moves);
         println!("CURRENT SELECTION: {:?}", self.current_selection);
         let mut board_repr = self.board.to_webapp();
@@ -115,9 +138,12 @@ impl Handler<BoardActions> for ChessActor {
             BoardActions::Setup => {
                 self.board = ChessBoard::new_default();
                 self.current_player = Color::White;
+                self.board_history = vec!();
+                self.current_history_offset = 0;
                 self.turn = 0;
                 self.current_selection = None;
                 self.current_moves = HashMap::new();
+                self.promotion_opt = None;
                 Ok(self.board.to_webapp())
             },
             _ => {
@@ -126,6 +152,75 @@ impl Handler<BoardActions> for ChessActor {
         }
     }
 }
+
+
+impl Handler<Promote> for ChessActor {
+    type Result=Result<WebappRepr, ()>;
+
+    fn handle(&mut self, msg: Promote, ctx: &mut Self::Context) -> Self::Result {
+        if let Some(p) = self.promotion_opt {
+            let curr_board = self.board.clone();
+            self.board.play_once(Move::Promote(p, msg.promote_to));
+            self.current_player = self.current_player.other();
+            self.turn += 1;
+            self.board_history.push(curr_board);
+            self.promotion_opt = None;
+            Ok(self.board.to_webapp())
+        }
+        else {
+            Err(())
+        }
+    }
+}
+
+
+impl Handler<GetBoardForTurn> for ChessActor {
+    type Result=Result<WebappRepr, ()>;
+
+    fn handle(&mut self, msg: GetBoardForTurn, ctx: &mut Self::Context) -> Self::Result {
+        match self.board_history.get(msg.turn) {
+            Some(b) => Ok(b.to_webapp()),
+            _ => Err(())
+        }
+    }
+}
+
+impl Handler<GetPreviousBoard> for ChessActor {
+    type Result=Result<WebappRepr, ()>;
+
+    fn handle(&mut self, msg: GetPreviousBoard, ctx: &mut Self::Context) -> Self::Result {
+        println!("current turn: {}, offset: {}", self.turn, self.current_history_offset);
+        if self.current_history_offset < self.turn {
+            self.current_history_offset += 1;
+            match self.board_history.get(self.turn - self.current_history_offset) {
+                Some(b) => Ok(b.to_webapp()),
+                _ => Err(())
+            }
+        }
+        else {
+            Err(())
+        }
+    }
+}
+
+impl Handler<GetNextBoard> for ChessActor {
+    type Result=Result<WebappRepr, ()>;
+
+    fn handle(&mut self, msg: GetNextBoard, ctx: &mut Self::Context) -> Self::Result {
+        println!("current turn: {}, offset: {}", self.turn, self.current_history_offset);
+        if self.current_history_offset > 0 {
+            self.current_history_offset -= 1;
+            match self.board_history.get(self.turn - self.current_history_offset) {
+                Some(b) => Ok(b.to_webapp()),
+                _ => Ok(self.board.to_webapp())
+            }
+        }
+        else {
+            Ok(self.board.to_webapp())
+        }
+    }
+}
+
 
 struct AppData {
     chess_actor: Addr<ChessActor>
@@ -145,6 +240,30 @@ struct Play {
     y: usize
 }
 
+
+#[derive(Serialize, Deserialize, Message)]
+#[rtype(result="Result<WebappRepr, ()>")]
+struct Promote {
+    promote_to: CanPromoteTo
+}
+
+
+#[derive(Serialize, Deserialize, Message)]
+#[rtype(result="Result<WebappRepr, ()>")]
+struct GetBoardForTurn {
+    turn: usize
+}
+
+#[derive(Serialize, Deserialize, Message)]
+#[rtype(result="Result<WebappRepr, ()>")]
+struct GetPreviousBoard;
+
+
+#[derive(Serialize, Deserialize, Message)]
+#[rtype(result="Result<WebappRepr, ()>")]
+struct GetNextBoard;
+
+
 #[derive(Serialize, Deserialize, Message)]
 #[rtype(result="Result<WebappRepr, ()>")]
 enum BoardActions {
@@ -157,6 +276,24 @@ async fn play(data: web::Data<AppData>, payload: web::Json<Play>) -> actix_web::
     Ok(web::Json(new_board))
 }
 
+async fn get_board_for_turn(data: web::Data<AppData>, payload: web::Json<GetBoardForTurn>) -> actix_web::Result<impl actix_web::Responder> {
+    let err = actix_web::error::ErrorInternalServerError("Invalid board index");
+    let new_board = data.chess_actor.send(payload.0).await.unwrap().map_err(|_| err)?;
+    Ok(web::Json(new_board))
+}
+
+async fn get_previous_board(data: web::Data<AppData>) -> actix_web::Result<impl actix_web::Responder> {
+    let err = actix_web::error::ErrorInternalServerError("Invalid board index");
+    let new_board = data.chess_actor.send(GetPreviousBoard).await.unwrap().map_err(|_| err)?;
+    Ok(web::Json(new_board))
+}
+
+async fn get_next_board(data: web::Data<AppData>) -> actix_web::Result<impl actix_web::Responder> {
+    let err = actix_web::error::ErrorInternalServerError("Invalid board index");
+    let new_board = data.chess_actor.send(GetNextBoard).await.unwrap().map_err(|_| err)?;
+    Ok(web::Json(new_board))
+}
+
 async fn set_play_mode(data: web::Data<AppData>, mode: String) -> actix_web::Result<impl actix_web::Responder> {
     let err = actix_web::error::ErrorInternalServerError("could not process play");
    // let new_board = data.chess_actor.send(payload.0).await.unwrap().map_err(|_| err)?;
@@ -165,6 +302,13 @@ async fn set_play_mode(data: web::Data<AppData>, mode: String) -> actix_web::Res
         return Ok(web::Json("lol"))
     }
     Err(err)
+}
+
+
+async fn promote(data: web::Data<AppData>, payload: web::Json<Promote>) -> actix_web::Result<impl actix_web::Responder> {
+    let err = actix_web::error::ErrorInternalServerError("Bod promotion");
+    let new_board = data.chess_actor.send(payload.0).await.unwrap().map_err(|_| err)?;
+    Ok(web::Json(new_board))
 }
 
 //#[actix::main]
@@ -184,9 +328,23 @@ pub async fn run_dev_app() -> std::io::Result<()> {
             .route("/api/play", web::post().to(play))
             .route("/api/reset_board", web::get().to(reset_board))
             .route("/api/set_play_mode", web::get().to(reset_board))
+            .route("/api/get_previous_board", web::get().to(get_previous_board))
+            .route("/api/get_next_board", web::get().to(get_next_board))
+            .route("/api/promote", web::post().to(promote))
             .wrap(cors)
     })
     .bind(("127.0.0.1", 8005))?
     .run()
     .await    
+}
+
+#[test]
+fn test_ser() {
+    let promotion = Promote {
+        promote_to: CanPromoteTo::Bishop
+    };
+    let ev = serde_json::to_string(&promotion).unwrap();
+    println!("ev: {}", ev);
+
+    //let promote_str = "{}"
 }

@@ -13,12 +13,26 @@ export const Cell = (props: {
         color?: "WHITE" | "BLACK"
     },
     threatened?: boolean,
+    controll?: string,
+    show_controll: boolean,
     set_board?: any
 }) => {
     console.log("piece props: ", props.piece)
+    let controll = "";
+    if (props.show_controll) {
+        if (props.controll == "WHITE") {
+            controll = "controlledWhite"
+        }
+        else if (props.controll == "BLACK") {
+            controll = "controlledBlack"
+        }
+        else if (props.controll == "BOTH") {
+            controll = "controlledBoth"
+        }
+    }
     return (
         <div 
-            className={`${props.color}Cell ${props.threatened? "threatened": ""}`}
+            className={`${props.color}Cell ${props.threatened? "threatened": ""} ${controll}`}
             onClick={
                 (ev) => {
                     console.log("FIRED")

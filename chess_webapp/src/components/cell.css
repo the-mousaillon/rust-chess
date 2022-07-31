@@ -3,11 +3,23 @@
     background-color: white;
   }
   
-  .blackCell {
-    padding-top: 12px;
-    background-color: lightblue;
-  }
-  
-  .threatened{
-      border: 1px solid red;
-  }
+.blackCell {
+  padding-top: 12px;
+  background-color: lightblue;
+}
+
+.threatened{
+    border: 1px solid red;
+}
+
+.controlledBlack{
+  background-color: wheat;
+}
+
+.controlledWhite{
+  background-color: darkblue;
+}
+
+.controlledBoth{
+  background-color: plum;
+}

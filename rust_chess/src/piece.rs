@@ -23,9 +23,36 @@ impl Color {
             Self::White => "WHITE".into()
         }
     }
+
+    pub fn other(&self) -> Color {
+        match self {
+            Self::Black => Self::White,
+            Self::White => Self::Black
+        }
+    }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub enum CanPromoteTo {
+    Rook,
+    Bishop,
+    Knight,
+    Queen
+}
+
+impl Into<PieceType> for CanPromoteTo {
+    fn into(self) -> PieceType {
+        match self {
+            Self::Rook => PieceType::Rook,
+            Self::Bishop => PieceType::Bishop,
+            Self::Knight => PieceType::Knight,
+            Self::Queen => PieceType::Queen,
+        }
+    }
+}
+
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PieceType {
     Pawn,
     Knight,
@@ -63,6 +90,10 @@ fn get_piece_type(p: &impl PieceCommon) -> Option<PieceType> {
     Some(p.get_type())
 }
 
+fn get_piece_id(p: &impl PieceCommon) -> Option<usize> {
+    Some(p.get_id())
+}
+
 macro_rules! multi_match {
     ($p: ident, $match: ident, $no_match: ident) => {
         match $p {
@@ -78,12 +109,29 @@ macro_rules! multi_match {
 }
 
 impl Piece {
+    pub fn new(from: Position, color: Color, ptype: PieceType, id: usize) -> Self {
+        match ptype {
+            PieceType::Pawn => Self::Pawn(Pawn::new(from, color, id)),
+            PieceType::Knight => Self::Knight(Knight::new(from, color, id)),
+            PieceType::Rook => Self::Rook(Rook::new(from, color, id)),
+            PieceType::Queen => Self::Queen(Queen::new(from, color, id)),
+            PieceType::King => Self::King(King::new(from, color, id)),
+            PieceType::Bishop => Self::Bishop(Bishop::new(from, color, id)),
+            PieceType::Empty => Self::Empty,
+        }
+    }
+
     pub fn color(&self) -> Option<Color> {
         multi_match!(self, get_piece_color, None)
     }
 
     pub fn get_type(&self) -> Option<PieceType> {
         multi_match!(self, get_piece_type, None)
+    }
+
+
+    pub fn get_id(&self) -> Option<usize> {
+        multi_match!(self, get_piece_id, None)
     }
 
     pub fn position(&self) -> Option<Position> {
@@ -110,9 +158,26 @@ impl Piece {
     // We lose a bit of efficiency since we generate each moves twice, but it makes code tighter and simpler
     pub fn get_controlled_squares(&self, board: &ChessBoard) -> Vec<Position> {
         let mut controlled = vec!();
-        for m in self.gen_moves(board) {
-            if let Move::Move(_, to) = m {
-                controlled.push(to)
+        match self.get_type() {
+            Some(PieceType::Pawn) => {
+                let (x, y) = self.position().unwrap();
+                match self.color().unwrap() {
+                    Color::Black => {
+                        controlled.push((x + 1, y + 1));
+                        controlled.push((x + 1, y - 1));
+                    },
+                    Color::White => {
+                        controlled.push((x - 1, y + 1));
+                        controlled.push((x - 1, y - 1));
+                    }
+                }
+            },
+            _ => {
+                for m in self.gen_moves(board) {
+                    if let Move::Move(_, to) = m {
+                        controlled.push(to)
+                    }
+                }
             }
         }
         controlled
@@ -139,13 +204,11 @@ impl Piece {
         }
     }
 
-
     pub fn set_position(&mut self, pos: Position) {
         match self {
             Piece::Pawn(p) => {
                 p.headstart = false;
                 if !p.has_moved && (p.position.0 - pos.0).abs() == 2 {
-                    println!("HEADSTART");
                     p.headstart = true
                 }
                 p.position = pos;
@@ -165,6 +228,28 @@ impl Piece {
             Piece::Empty => {},
         }
     }
+
+    pub fn set_attack_vector(&mut self, direction: Option<VectorDirection>) {
+        match self {
+            Piece::Pawn(p) => {
+                p.pin_vector = direction;
+            },
+            Piece::Knight(p) => {
+                p.pin_vector = direction;
+            },
+            Piece::Rook(p) => {
+                p.pin_vector = direction;
+            },
+            Piece::Queen(p) => {
+                p.pin_vector = direction;
+            },
+            Piece::Bishop(p) => {
+                p.pin_vector = direction;
+            },
+            _ => {}
+        }
+    }
+
     pub fn webapp_repr(&self) -> CellRepr {
         let color = self.color();
         match self {
@@ -174,7 +259,8 @@ impl Piece {
                     color: color.map(|c| c.webapp_repr()),
                     name: Some("KING".into())
                 },
-                threatened: false
+                threatened: false,
+                controll: None,
             },
             Piece::Queen(p) => CellRepr {
                 piece: PieceRepr {
@@ -182,7 +268,8 @@ impl Piece {
                     color: color.map(|c| c.webapp_repr()),
                     name: Some("QUEEN".into())
                 },
-                threatened: false
+                threatened: false,
+                controll: None,
             },
             Piece::Rook(p) => CellRepr {
                 piece: PieceRepr {
@@ -190,7 +277,8 @@ impl Piece {
                     color: color.map(|c| c.webapp_repr()),
                     name: Some("ROOK".into())
                 },
-                threatened: false
+                threatened: false,
+                controll: None,
             },
             Piece::Bishop(p) => CellRepr {
                 piece: PieceRepr {
@@ -198,7 +286,8 @@ impl Piece {
                     color: color.map(|c| c.webapp_repr()),
                     name: Some("BISHOP".into())
                 },
-                threatened: false
+                threatened: false,
+                controll: None,
             },
             Piece::Knight(p) => CellRepr {
                 piece: PieceRepr {
@@ -206,7 +295,8 @@ impl Piece {
                     color: color.map(|c| c.webapp_repr()),
                     name: Some("KNIGHT".into())
                 },
-                threatened: false
+                threatened: false,
+                controll: None,
             },
             Piece::Pawn(p) => CellRepr {
                 piece: PieceRepr {
@@ -214,7 +304,8 @@ impl Piece {
                     color: color.map(|c| c.webapp_repr()),
                     name: Some("PAWN".into())
                 },
-                threatened: false
+                threatened: false,
+                controll: None,
             },
             Piece::Empty => CellRepr {
                 piece: PieceRepr {
@@ -222,7 +313,8 @@ impl Piece {
                     color: color.map(|c| c.webapp_repr()),
                     name: Some("EMPTY".into())
                 },
-                threatened: false
+                threatened: false,
+                controll: None,
             },
         }
     }
@@ -239,6 +331,7 @@ pub enum Move {
     EnPassant(Position, Position),
     KingsideCastle(Color),
     QueensideCastle(Color),
+    Promote(Position, CanPromoteTo),
     Invalid
 }
 
@@ -250,7 +343,6 @@ impl Move {
         }
         let dst = &board.board[to.0 as usize][to.1 as usize];
         // If we try to move in our own piece, the move is invalid
-        println!("dst: {:?}", dst);
         if !dst.is_empty() && (dst.color().unwrap() == p.color()) {
             return Move::Invalid
         }
@@ -321,16 +413,13 @@ fn diag_line_generic(p: &impl PieceCommon, board: &ChessBoard, n_travel: i8, pos
         let move_ = Move::new(p, board, to);
         match move_ {
             Move::Move(_, _) =>{
-                println!("MOVE");
                 moves.push(move_);
             },
             Move::Take(_, _) => {
-                println!("TAKE");
                 moves.push(move_);
                 break
             },
             Move::Invalid => {
-                println!("INVALID");
                 break
             }
             _ => panic!("This case shoud never happn, check the code")
@@ -338,6 +427,12 @@ fn diag_line_generic(p: &impl PieceCommon, board: &ChessBoard, n_travel: i8, pos
     }
     moves
 }
+
+// fn check_attack_vector(p: &impl PieceCommon, direction: VectorDirection, attack_vectors: &HashMap<VectorDirection, AttackVector>) -> bool {
+//     match direction {
+//         VectorDirection::UP | VectorDirection::RIGHT => attack_vectors.get(Vec)
+//     }
+// }
 
 fn line_left(p: &impl PieceCommon, board: &ChessBoard) -> Vec<Move> {
     let pos = p.position();
@@ -413,7 +508,7 @@ fn diag_right_down(p: &impl PieceCommon, board: &ChessBoard) -> Vec<Move> {
 
 /// 
 pub trait PieceCommon {
-    fn new(p: Position, color: Color) -> Self;
+    fn new(p: Position, color: Color, id: usize) -> Self;
 
     fn color(&self) -> Color;
 
@@ -424,23 +519,29 @@ pub trait PieceCommon {
     fn emoji_repr(&self) -> &'static str;
 
     fn get_type(&self) -> PieceType;
+
+    fn get_id(&self) -> usize;
 }
 
 #[derive(Clone, Debug)]
 pub struct Pawn {
+    id: usize,
     color: Color,
     position: Position,
     has_moved: bool,
-    headstart: bool
+    headstart: bool,
+    pin_vector: Option<VectorDirection>
 }
 
 impl PieceCommon for Pawn {
-    fn new(p: Position, color: Color) -> Self {
+    fn new(p: Position, color: Color, id: usize) -> Self {
         Self {
             color: color,
             position: p,
+            id: id,
             has_moved: false,
-            headstart: false
+            headstart: false,
+            pin_vector: None
         }
     }
 
@@ -452,21 +553,37 @@ impl PieceCommon for Pawn {
         self.position.clone()
     }
 
+    fn get_id(&self) -> usize {
+        self.id
+    }
+
     // Pawn moves are actually the hardest to generate
     fn gen_moves(&self, board: &ChessBoard) -> Vec<Move> {
+        let mut pin_updown = false;
+        let mut pin_downleft_rightup = false;
+        let mut pin_downright_leftup = false;
+        match self.pin_vector {
+            Some(VectorDirection::LEFT) | Some(VectorDirection::RIGHT) => return vec!(),
+            Some(VectorDirection::UP) | Some(VectorDirection::DOWN) => pin_updown = true,
+            Some(VectorDirection::DOWN_LEFT) | Some(VectorDirection::UP_RIGHT) => pin_downleft_rightup = true,
+            Some(VectorDirection::DOWN_RIGHT) | Some(VectorDirection::UP_LEFT) => pin_downright_leftup = true,
+            _ => {}
+        }
         let mut moves = vec!();
         let pos = self.position();
         let direction = match &self.color {
             &Color::Black => 1,
             &Color::White => -1
         };
+
         // The basic move
         let base_move = Move::new(self, board, (pos.0 + direction, pos.1));
+        
         let base_move_cond = match &base_move {
             Move::Move(_, _) => true,
             _ => false
         };
-        if base_move_cond {
+        if base_move_cond && !pin_downright_leftup && !pin_downleft_rightup{
             // If the game starts, we can move two squares
             moves.push(base_move);
             if !self.has_moved {
@@ -480,18 +597,25 @@ impl PieceCommon for Pawn {
         // Taking enemy pieces on the side, en passant is handled here
         let take_left = Move::new_with_enpassant(self, board, (pos.0 + direction, pos.1 + direction));
         let take_right = Move::new_with_enpassant(self, board, (pos.0 + direction, pos.1 - direction));
-        println!("Take left: {:?}, take right: {:?}", take_left, take_right);
         if let Move::Take(_, _) = take_left {
-            moves.push(take_left);
+            if !pin_downleft_rightup && !pin_updown{
+                moves.push(take_left);
+            }
         }
         else if let Move::EnPassant(_, _) = take_left {
-            moves.push(take_left);
+            if !pin_downleft_rightup && !pin_updown{
+                moves.push(take_left);
+            }
         }
         if let Move::EnPassant(_, _) = take_right {
-            moves.push(take_right);
+            if !pin_downright_leftup && !pin_updown{
+                moves.push(take_right);
+            }
         }
         else if let Move::Take(_, _) = take_right  {
-            moves.push(take_right);
+            if !pin_downright_leftup && !pin_updown{
+                moves.push(take_right);
+            }
         }
         moves
     }
@@ -511,14 +635,18 @@ impl PieceCommon for Pawn {
 #[derive(Clone, Debug)]
 pub struct Knight {
     color: Color,
+    id: usize,
     position: Position,
+    pin_vector: Option<VectorDirection>
 }
 
 impl PieceCommon for Knight {
-    fn new(p: Position, color: Color) -> Self {
+    fn new(p: Position, color: Color, id: usize) -> Self {
         Self {
             color: color,
+            id: id,
             position: p,
+            pin_vector: None
         }
     }
 
@@ -531,6 +659,10 @@ impl PieceCommon for Knight {
     }
 
     fn gen_moves(&self, board: &ChessBoard) -> Vec<Move> {
+        // A pinned knight cannot move
+        if self.pin_vector.is_some() {
+            return vec!()
+        }
         // ad - hoc moves
         vec![
             Move::new(self, board, (self.position.0 - 2, self.position.1 - 1)),
@@ -554,21 +686,29 @@ impl PieceCommon for Knight {
     fn get_type(&self) -> PieceType {
         PieceType::Knight
     }
+
+    fn get_id(&self) -> usize {
+        self.id
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct Rook {
     color: Color,
     position: Position,
-    has_moved: bool
+    id: usize,
+    has_moved: bool,
+    pin_vector: Option<VectorDirection>
 }
 
 impl PieceCommon for Rook {
-    fn new(p: Position, color: Color) -> Self {
+    fn new(p: Position, color: Color, id: usize) -> Self {
         Self {
             color: color,
+            id: id,
             position: p,
-            has_moved: false
+            has_moved: false,
+            pin_vector: None
         }
     }
 
@@ -582,13 +722,25 @@ impl PieceCommon for Rook {
 
     fn gen_moves(&self, board: &ChessBoard) -> Vec<Move> {
         let mut moves = vec!();
-        moves.extend(line_left(self, board));
-        moves.extend(line_right(self, board));
-        moves.extend(line_up(self, board));
-        moves.extend(line_down(self, board));
+        match self.pin_vector {
+            Some(VectorDirection::LEFT) | Some(VectorDirection::RIGHT) => {
+                moves.extend(line_left(self, board));
+                moves.extend(line_right(self, board));
+            },
+            Some(VectorDirection::DOWN) | Some(VectorDirection::UP) => {
+                moves.extend(line_up(self, board));
+                moves.extend(line_down(self, board));
+            },
+            _ => {
+                moves.extend(line_left(self, board));
+                moves.extend(line_right(self, board));
+                moves.extend(line_up(self, board));
+                moves.extend(line_down(self, board));
+            }
+        }
         moves
     }
-
+    
     fn emoji_repr(&self) -> &'static str {
         match self.color {
             Color::Black => "♜",
@@ -599,19 +751,27 @@ impl PieceCommon for Rook {
     fn get_type(&self) -> PieceType {
         PieceType::Rook
     }
+
+    fn get_id(&self) -> usize {
+        self.id
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct Queen {
     color: Color,
+    id: usize,
     position: Position,
+    pub pin_vector: Option<VectorDirection>
 }
 
 impl PieceCommon for Queen {
-    fn new(p: Position, color: Color) -> Self {
+    fn new(p: Position, color: Color, id: usize) -> Self {
         Self {
             color: color,
+            id: id,
             position: p,
+            pin_vector: None
         }
     }
     fn color(&self) -> Color {
@@ -625,15 +785,35 @@ impl PieceCommon for Queen {
     fn gen_moves(&self, board: &ChessBoard) -> Vec<Move> {
         let mut moves = vec!();
         // lines
-        moves.extend(line_left(self, board));
-        moves.extend(line_right(self, board));
-        moves.extend(line_up(self, board));
-        moves.extend(line_down(self, board));
-        // diags
-        moves.extend(diag_left_up(self, board));
-        moves.extend(diag_right_up(self, board));
-        moves.extend(diag_left_down(self, board));
-        moves.extend(diag_right_down(self, board));
+        match self.pin_vector {
+            Some(VectorDirection::DOWN) | Some(VectorDirection::UP) => {
+                moves.extend(line_up(self, board));
+                moves.extend(line_down(self, board));
+            },
+            Some(VectorDirection::LEFT) | Some(VectorDirection::RIGHT) => {
+                moves.extend(line_left(self, board));
+                moves.extend(line_right(self, board));
+            },
+            Some(VectorDirection::UP_LEFT) | Some(VectorDirection::DOWN_RIGHT) => {
+                moves.extend(diag_left_up(self, board));
+                moves.extend(diag_right_down(self, board));
+            },
+            Some(VectorDirection::UP_RIGHT) | Some(VectorDirection::DOWN_LEFT) => {
+                moves.extend(diag_left_down(self, board));
+                moves.extend(diag_right_up(self, board));
+            },
+            _ => {
+                moves.extend(line_left(self, board));
+                moves.extend(line_right(self, board));
+                moves.extend(line_up(self, board));
+                moves.extend(line_down(self, board));
+                // diags
+                moves.extend(diag_left_up(self, board));
+                moves.extend(diag_right_up(self, board));
+                moves.extend(diag_left_down(self, board));
+                moves.extend(diag_right_down(self, board));
+            }
+        }
         moves
     }
 
@@ -647,19 +827,27 @@ impl PieceCommon for Queen {
     fn get_type(&self) -> PieceType {
         PieceType::Queen
     }
+
+    fn get_id(&self) -> usize {
+        self.id
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct Bishop {
     color: Color,
+    id: usize,
     position: Position,
+    pin_vector: Option<VectorDirection>
 }
 
 impl PieceCommon for Bishop {
-    fn new(p: Position, color: Color) -> Self {
+    fn new(p: Position, color: Color, id: usize) -> Self {
         Self {
             color: color,
+            id: id,
             position: p,
+            pin_vector: None
         }
     }
     fn color(&self) -> Color {
@@ -672,10 +860,22 @@ impl PieceCommon for Bishop {
 
     fn gen_moves(&self, board: &ChessBoard) -> Vec<Move> {
         let mut moves = vec!();
-        moves.extend(diag_left_up(self, board));
-        moves.extend(diag_right_up(self, board));
-        moves.extend(diag_left_down(self, board));
-        moves.extend(diag_right_down(self, board));
+        match self.pin_vector {
+            Some(VectorDirection::DOWN_LEFT) | Some(VectorDirection::UP_RIGHT) => {
+                moves.extend(diag_right_up(self, board));
+                moves.extend(diag_left_down(self, board));
+            }
+            Some(VectorDirection::DOWN_RIGHT) | Some(VectorDirection::UP_LEFT) => {
+                moves.extend(diag_left_up(self, board));
+                moves.extend(diag_right_down(self, board));;
+            }
+            _ => {
+                moves.extend(diag_left_up(self, board));
+                moves.extend(diag_right_up(self, board));
+                moves.extend(diag_left_down(self, board));
+                moves.extend(diag_right_down(self, board));
+            }
+        }
         moves
     }
 
@@ -688,6 +888,10 @@ impl PieceCommon for Bishop {
 
     fn get_type(&self) -> PieceType {
         PieceType::Bishop
+    }
+
+    fn get_id(&self) -> usize {
+        self.id
     }
 }
 
@@ -751,7 +955,9 @@ impl VectorDirection {
 pub struct AttackVector {
     from: Position,
     to: Position,
-    vec_direction: VectorDirection
+    vec_direction: VectorDirection,
+    x_bounds: (i8, i8),
+    y_bounds: (i8, i8)
 }
 
 impl AttackVector {
@@ -760,7 +966,19 @@ impl AttackVector {
         Self { 
             from: from,
             to: to,
-            vec_direction: vec_direction
+            vec_direction: vec_direction,
+            x_bounds: (std::cmp::min(from.0, to.0), std::cmp::max(from.0, to.0)),
+            y_bounds: (std::cmp::min(from.1, to.1), std::cmp::max(from.1, to.1))
+        }
+    }
+
+    pub fn contains_position(&self, p: &Position) -> bool {
+        let condi_in = self.x_bounds.0 <= p.0 && p.0 <= self.x_bounds.1 && self.y_bounds.0 <= p.1 && p.1 <= self.y_bounds.1;
+        match &self.vec_direction {
+            VectorDirection::UP | VectorDirection::DOWN => p.1 == self.from.1 && self.from.0 <= p.0 && condi_in,
+            VectorDirection::LEFT | VectorDirection::RIGHT => p.0 == self.from.0 && self.from.1 <= p.0 && condi_in,
+            VectorDirection::DOWN_LEFT | VectorDirection::UP_RIGHT => self.from.0 + self.from.1 == p.0 + p.1 && condi_in,
+            VectorDirection::DOWN_RIGHT | VectorDirection::UP_LEFT  => self.from.0 - self.from.1 == p.0 - p.1 && condi_in,
         }
     }
 }
@@ -768,59 +986,55 @@ impl AttackVector {
 #[derive(Clone, Debug)]
 pub struct King {
     color: Color,
+    id: usize,
     position: Position,
     has_moved: bool,
 }
 
 impl King {
-    fn generic_attack_vector(&self, board: &ChessBoard, direction: &VectorDirection) -> Option<AttackVector> {
-        let mut current_defender: &Piece;
+    fn generic_attack_vector(&self, board: &mut ChessBoard, direction: &VectorDirection) {
+        let mut current_defender_pos: Position = (-1, -1);
         let mut n_defenders = 0;
         let mut pos = self.position();
         let dir_vec = direction.dir_vec();
         loop {
             pos = (pos.0 + dir_vec.0, pos.1 + dir_vec.1);
             if pos.0 < 0 || pos.0 > 7 || pos.1 < 0 || pos.1 > 7 {
-                return None;
+                break;
             }
             let dst = &board.board[pos.0 as usize][pos.1 as usize];
             match dst.color() {
                 Some(c) if c == self.color => {
                     n_defenders += 1;
-                    current_defender = dst
+                    current_defender_pos = dst.position().unwrap();
                 },
-                Some(c) if c != self.color => {
+                Some(c) if c != self.color && n_defenders == 1 => {
                     if dst.can_attack(&direction) {
-                        let attack_vector = AttackVector::new(self.position, dst.position().unwrap(), direction.clone());
-                        return Some(attack_vector)
+                        board.board[current_defender_pos.0 as usize][current_defender_pos.1 as usize].set_attack_vector(Some(direction.clone()));
                     }
-                    else {
-                        return None
-                    }
+                    break;
                 }
+                _ if n_defenders > 1 => {
+                    break;
+                },
                 _ => {}
-            }
-            if n_defenders > 1 {
-                return None
             }
         }
     }
 
-    pub fn gen_attack_vectors(&self, board: &ChessBoard) -> HashMap<Position, AttackVector> {
-        let mut hm_attacks = HashMap::new();
+    // Add the pin vectors to pieces
+    pub fn gen_attack_vectors(&self, board: &mut ChessBoard) {
         for direction in VectorDirection::all_directions().iter() {
-            if let Some(av) = self.generic_attack_vector(board, direction) {
-                hm_attacks.insert(av.to, av);
-            }
+            self.generic_attack_vector(board, direction)
         }
-        hm_attacks
     }
 }
 
 impl PieceCommon for King {
-    fn new(p: Position, color: Color) -> Self {
+    fn new(p: Position, color: Color, id: usize) -> Self {
         Self {
             color: color,
+            id: id,
             position: p,
             has_moved: false
         }
@@ -835,6 +1049,15 @@ impl PieceCommon for King {
     }
 
     fn gen_moves(&self, board: &ChessBoard) -> Vec<Move> {
+        let filter_moves = |moves: Vec<Move>| -> Vec<Move> {
+            moves
+                .into_iter()
+                .filter(|m| match m {
+                    Move::Move(_,  to) => !board.faction.is_controlled(to, &self.color().other()),
+                    _ => true
+                })
+                .collect()
+        };
         // Ad-hoc moves
         let mut moves = vec![
             // Lines
@@ -848,6 +1071,7 @@ impl PieceCommon for King {
             Move::new(self, board, (self.position.0 - 1, self.position.1 + 1)),
             Move::new(self, board, (self.position.0 - 1, self.position.1 - 1)),
         ];
+        moves = filter_moves(moves);
         if self.has_moved {
             return moves
         }
@@ -855,17 +1079,18 @@ impl PieceCommon for King {
             step_size: i8,
             mult: i8,
             rook_pos: Position,
-            player_pieces: &HashMap<Position, Piece>,
+            player: &Color,
             opponent_control: &HashSet<Position>
         | {
             let ok_empty = (1..=step_size).all(|i| {
                 let pos = (self.position.0, self.position.1 + i * mult);
-                println!("pos: {:?}, is_empty: {}, opponent control: {}", pos, board.board[pos.0 as usize][pos.1 as usize].is_empty(), opponent_control.contains(&pos));
+                //println!("pos: {:?}, is_empty: {}, opponent control: {}", pos, board.board[pos.0 as usize][pos.1 as usize].is_empty(), opponent_control.contains(&pos));
                 board.board[pos.0 as usize][pos.1 as usize].is_empty() && !opponent_control.contains(&pos)
             });
-            println!("Condi castle empty: {}, self_moved: {}, rook: {:?}", ok_empty, self.has_moved, player_pieces.get(&rook_pos));
-            match (ok_empty, self.has_moved, player_pieces.get(&rook_pos)) {
-                (true, false, Some(Piece::Rook(r))) if !r.has_moved => {
+            //println!("Condi castle empty: {}, self_moved: {}, rook: {:?}", ok_empty, self.has_moved, player_pieces.get(&rook_pos));
+            let dst = &board.board[rook_pos.0 as usize][rook_pos.1 as usize];
+            match (ok_empty, self.has_moved, dst) {
+                (true, false, Piece::Rook(r)) if !r.has_moved && &r.color() == player => {
                     true
                 }
                 _ => {
@@ -877,21 +1102,21 @@ impl PieceCommon for King {
         match self.color {
             Color::White => {
                 // Kingside
-                if castle_check(2, 1, (7, 7), &board.faction.white_pieces_by_pos, &board.faction.black_controlled) {
+                if castle_check(2, 1, (7, 7), &self.color, &board.faction.black_controlled) {
                     moves.push(Move::KingsideCastle(self.color.clone()));
                 }
                 // queenside
-                if castle_check(3, -1, (7, 0), &board.faction.white_pieces_by_pos, &board.faction.black_controlled) {
+                if castle_check(3, -1, (7, 0), &self.color, &board.faction.black_controlled) {
                     moves.push(Move::QueensideCastle(self.color.clone()));
                 }
             },
             Color::Black => {
                 // Kingside
-                if castle_check(2, -1, (0, 0), &board.faction.black_pieces_by_pos, &board.faction.white_controlled) {
+                if castle_check(2, -1, (0, 0), &self.color, &board.faction.white_controlled) {
                     moves.push(Move::KingsideCastle(self.color.clone()));
                 }
                 // queenside
-                if castle_check(3, 1, (0, 7), &board.faction.black_pieces_by_pos, &board.faction.white_controlled) {
+                if castle_check(3, 1, (0, 7), &self.color, &board.faction.white_controlled) {
                     moves.push(Move::QueensideCastle(self.color.clone()));
                 }
             }
@@ -908,5 +1133,9 @@ impl PieceCommon for King {
 
     fn get_type(&self) -> PieceType {
         PieceType::King
+    }
+
+    fn get_id(&self) -> usize {
+        self.id
     }
 }

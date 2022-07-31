@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::piece::Color;
+use crate::piece::{Color, CanPromoteTo};
 
 use super::piece::{
     Piece,
@@ -30,7 +30,8 @@ pub struct PieceRepr {
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct CellRepr {
     pub piece: PieceRepr,
-    pub threatened: bool
+    pub threatened: bool,
+    pub controll: Option<String>
 }
 
 #[derive(Default, Debug, Serialize, Deserialize)]
@@ -57,32 +58,32 @@ pub fn initial_board() -> Vec<Vec<Piece>> {
     let mut board = empty_board();
     // Black faction
     // Major pieces
-    board[0][0] = Piece::Rook(Rook::new((0, 0), Color::Black));
-    board[0][1] = Piece::Knight(Knight::new((0, 1), Color::Black));
-    board[0][2] = Piece::Bishop(Bishop::new((0, 2), Color::Black));
-    board[0][3] = Piece::King(King::new((0, 3), Color::Black));
-    board[0][4] = Piece::Queen(Queen::new((0, 4), Color::Black));
-    board[0][5] = Piece::Bishop(Bishop::new((0, 5), Color::Black));
-    board[0][6] = Piece::Knight(Knight::new((0, 6), Color::Black));
-    board[0][7] = Piece::Rook(Rook::new((0, 7), Color::Black));
+    board[0][0] = Piece::Rook(Rook::new((0, 0), Color::Black, 1));
+    board[0][1] = Piece::Knight(Knight::new((0, 1), Color::Black, 2));
+    board[0][2] = Piece::Bishop(Bishop::new((0, 2), Color::Black, 3));
+    board[0][3] = Piece::King(King::new((0, 3), Color::Black, 4));
+    board[0][4] = Piece::Queen(Queen::new((0, 4), Color::Black, 5));
+    board[0][5] = Piece::Bishop(Bishop::new((0, 5), Color::Black, 6));
+    board[0][6] = Piece::Knight(Knight::new((0, 6), Color::Black, 7));
+    board[0][7] = Piece::Rook(Rook::new((0, 7), Color::Black, 8));
     // Pawns
     for i in 0..8 {
-        board[1][i] = Piece::Pawn(Pawn::new((1, i as i8), Color::Black));
+        board[1][i] = Piece::Pawn(Pawn::new((1, i as i8), Color::Black, i*3));
     }
 
     // White faction
     // Major pieces
-    board[7][0] = Piece::Rook(Rook::new((7, 0), Color::White));
-    board[7][1] = Piece::Knight(Knight::new((7, 1), Color::White));
-    board[7][2] = Piece::Bishop(Bishop::new((7, 2), Color::White));
-    board[7][3] = Piece::Queen(Queen::new((7, 3), Color::White));
-    board[7][4] = Piece::King(King::new((7, 4), Color::White));
-    board[7][5] = Piece::Bishop(Bishop::new((7, 5), Color::White));
-    board[7][6] = Piece::Knight(Knight::new((7, 6), Color::White));
-    board[7][7] = Piece::Rook(Rook::new((7, 7), Color::White));
+    board[7][0] = Piece::Rook(Rook::new((7, 0), Color::White, 9));
+    board[7][1] = Piece::Knight(Knight::new((7, 1), Color::White, 10));
+    board[7][2] = Piece::Bishop(Bishop::new((7, 2), Color::White, 11));
+    board[7][3] = Piece::Queen(Queen::new((7, 3), Color::White, 12));
+    board[7][4] = Piece::King(King::new((7, 4), Color::White, 13));
+    board[7][5] = Piece::Bishop(Bishop::new((7, 5), Color::White, 14));
+    board[7][6] = Piece::Knight(Knight::new((7, 6), Color::White, 15));
+    board[7][7] = Piece::Rook(Rook::new((7, 7), Color::White, 16));
     //Pawns
     for i in 0..8 {
-        board[6][i] = Piece::Pawn(Pawn::new((6, i as i8), Color::White));
+        board[6][i] = Piece::Pawn(Pawn::new((6, i as i8), Color::White, i * 4));
     }
 
     board
@@ -120,11 +121,12 @@ pub fn apply_markers(board: &mut WebappRepr, moves: &Vec<Move>) {
 
 #[derive(Clone, Debug)]
 pub struct Faction {
+    pub pieces: HashMap<usize, Piece>,
     // Piece lists
-    pub black_pieces_by_pos: HashMap<Position, Piece>,
-    pub black_pieces_by_type: HashMap<PieceType, Piece>,
-    pub white_pieces_by_pos: HashMap<Position, Piece>,
-    pub white_pieces_by_type: HashMap<PieceType, Piece>,
+    pub black_pieces: HashMap<usize, Position>,
+    pub black_pieces_by_type: HashMap<PieceType, Position>,
+    pub white_pieces: HashMap<usize, Position>,
+    pub white_pieces_by_type: HashMap<PieceType, Position>,
     // Controled squares for each factions
     pub black_controlled: HashSet<Position>,
     pub white_controlled: HashSet<Position>
@@ -133,9 +135,10 @@ pub struct Faction {
 impl Faction {
     pub fn new_empty() -> Self {
         Self { 
-            black_pieces_by_pos: HashMap::new(),
+            pieces: HashMap::new(),
+            black_pieces: HashMap::new(),
             black_pieces_by_type: HashMap::new(),
-            white_pieces_by_pos: HashMap::new(),
+            white_pieces: HashMap::new(),
             white_pieces_by_type: HashMap::new(),
             black_controlled: HashSet::new(),
             white_controlled: HashSet::new()
@@ -146,28 +149,57 @@ impl Faction {
         match piece.color() {
             Some(Color::White) => {
                 let piece_pos = piece.position().unwrap();
-                self.white_pieces_by_pos.remove(&piece_pos);
-                self.white_pieces_by_pos.insert(piece_pos, piece.clone());
                 let piece_type = piece.get_type().unwrap();
+                let piece_id = piece.get_id().unwrap();
+                self.white_pieces.remove(&piece_id);
+                self.white_pieces.insert(piece_id, piece_pos.clone());
                 self.white_pieces_by_type.remove(&piece_type);
-                self.white_pieces_by_type.insert(piece_type, piece);
+                self.white_pieces_by_type.insert(piece_type, piece.position().unwrap());
             },
             Some(Color::Black) => {
                 let piece_pos = piece.position().unwrap();
-                self.black_pieces_by_pos.remove(&piece_pos);
-                self.black_pieces_by_pos.insert(piece_pos, piece.clone());
                 let piece_type = piece.get_type().unwrap();
+                let piece_id = piece.get_id().unwrap();
+                self.black_pieces.remove(&piece_id);
+                self.black_pieces.insert(piece_id, piece_pos.clone());
                 self.black_pieces_by_type.remove(&piece_type);
-                self.black_pieces_by_type.insert(piece_type, piece);
+                self.black_pieces_by_type.insert(piece_type, piece.position().unwrap());
             },
             _ => {}
         }
     }
 
+    pub fn delete(&mut self, piece: &Piece) {
+        match piece.color() {
+            Some(Color::White) => {
+                let piece_pos = piece.position().unwrap();
+                let piece_type = piece.get_type().unwrap();
+                let piece_id = piece.get_id().unwrap();
+                self.white_pieces.remove(&piece_id);
+                self.white_pieces_by_type.remove(&piece_type);
+            },
+            Some(Color::Black) => {
+                let piece_pos = piece.position().unwrap();
+                let piece_type = piece.get_type().unwrap();
+                let piece_id = piece.get_id().unwrap();
+                self.black_pieces.remove(&piece_id);
+                self.black_pieces_by_type.remove(&piece_type);
+            },
+            _ => {}
+        }
+    }
+
+    pub fn is_controlled(&self, pos: &Position, color: &Color) -> bool {
+        match color {
+            Color::Black => self.black_controlled.contains(pos),
+            Color::White => self.white_controlled.contains(pos)
+        }
+    }
+
     pub fn clear(&mut self) {
-        self.black_pieces_by_pos.clear();
+        self.black_pieces.clear();
+        self.white_pieces.clear();
         self.black_pieces_by_type.clear();
-        self.white_pieces_by_pos.clear();
         self.white_pieces_by_type.clear();
     }
 }
@@ -211,15 +243,36 @@ impl ChessBoard {
         }
     }
 
-    pub fn locate_king(&self, faction: Color) -> King {
+    pub fn locate_king(&self, faction: &Color) -> King {
         match faction {
             Color::Black => match self.faction.black_pieces_by_type.get(&PieceType::King).unwrap() {
-                Piece::King(k) => k.clone(),
+                pos => match self.board[pos.0 as usize][pos.1 as usize] {
+                   Piece::King(ref k) => k.clone(),
+                   _ => panic!("There should always be king on the board")
+                },
                 _ => panic!("There should always be king on the board")
             },
             Color::White => match self.faction.white_pieces_by_type.get(&PieceType::King).unwrap() {
-                Piece::King(k) => k.clone(),
-                _ => panic!("There should always be king on the board")
+                pos => match self.board[pos.0 as usize][pos.1 as usize] {
+                    Piece::King(ref k) => k.clone(),
+                    _ => panic!("There should always be king on the board")
+                 },
+                 _ => panic!("There should always be king on the board")
+            }
+        }
+    }
+
+    pub fn reset_pin_vectors(&mut self, faction: &Color) {
+        match faction {
+            Color::Black => {
+                for pos in self.faction.black_pieces.values() {
+                    self.board[pos.0 as usize][pos.1 as usize].set_attack_vector(None);
+                }
+            },
+            Color::White => {
+                for pos in self.faction.white_pieces.values() { 
+                    self.board[pos.0 as usize][pos.1 as usize].set_attack_vector(None);
+                }
             }
         }
     }
@@ -228,15 +281,17 @@ impl ChessBoard {
         match faction {
             Color::Black => {
                 let mut black_controlled = HashSet::new();
-                for (_, bp) in self.faction.black_pieces_by_pos.iter() {
-                    black_controlled.extend(bp.get_controlled_squares(self));
+                for pos in self.faction.black_pieces.values() {
+                    let piece = &self.board[pos.0 as usize][pos.1 as usize];
+                    black_controlled.extend(piece.get_controlled_squares(self));
                 }
                 self.faction.black_controlled = black_controlled;
             },
             Color::White => {
                 let mut white_controlled = HashSet::new();
-                for (_, wp) in self.faction.white_pieces_by_pos.iter() {
-                    white_controlled.extend(wp.get_controlled_squares(self));
+                for pos in self.faction.white_pieces.values() {
+                    let piece = &self.board[pos.0 as usize][pos.1 as usize];
+                    white_controlled.extend(piece.get_controlled_squares(self));
                 }
                 self.faction.white_controlled = white_controlled;
             }
@@ -256,62 +311,84 @@ impl ChessBoard {
         self.board[rook_to.0 as usize][rook_to.1 as usize] = rook;
     }
 
-    pub fn play(&mut self, moves: Vec<Move>) {
-        for m in moves {
-            match m {
-                Move::Take(from, to) => {
-                    let mut p = self.board[from.0 as usize][from.1 as usize].clone();
-                    p.set_position(to.clone());
-                    self.faction.upsert(p.clone());
-                    self.board[from.0 as usize][from.1 as usize] = Piece::Empty;
-                    let piece_color = p.color().unwrap();
-                    self.board[to.0 as usize][to.1 as usize] = p;
-                    self.update_controlled_squares(piece_color);
-                },
-                Move::Move(from, to) => {
-                    let mut p = self.board[from.0 as usize][from.1 as usize].clone();
-                    p.set_position(to.clone());
-                    self.faction.upsert(p.clone());
-                    self.board[from.0 as usize][from.1 as usize] = Piece::Empty;
-                    let piece_color = p.color().unwrap();
-                    self.board[to.0 as usize][to.1 as usize] = p;
-                    self.update_controlled_squares(piece_color);
-                },
-                Move::EnPassant(from, to) => {
-                    let mut p = self.board[from.0 as usize][from.1 as usize].clone();
-                    p.set_position(to.clone());
-                    self.faction.upsert(p.clone());
-                    self.board[from.0 as usize][from.1 as usize] = Piece::Empty;
-                    self.board[from.0 as usize][to.1 as usize] = Piece::Empty;
-                    let piece_color = p.color().unwrap();
-                    self.board[to.0 as usize][to.1 as usize] = p;
-                    self.update_controlled_squares(piece_color);
-                },
-                Move::KingsideCastle(faction) => {
-                    match faction {
-                        Color::White => {
-                            self.castle((7, 4), (7, 6), (7, 7), (7, 5))
-                        }
-                        Color::Black => {
-                            self.castle((0, 3), (0, 1), (0, 0), (0, 2))
-                        }
+    // returns the promotion position if the move leads to a promotion
+    pub fn play_once(&mut self, m: Move) -> Option<Position> {
+        match m {
+            Move::Take(from, to) => {
+                let mut p = self.board[from.0 as usize][from.1 as usize].clone();
+                p.set_position(to.clone());
+                self.faction.upsert(p.clone());
+                self.board[from.0 as usize][from.1 as usize] = Piece::Empty;
+                let piece_color = p.color().unwrap();
+                let piece_type = p.get_type().unwrap();
+                self.board[to.0 as usize][to.1 as usize] = p;
+                self.update_controlled_squares(piece_color.clone());
+                match (piece_type, piece_color, to) {
+                    (PieceType::Pawn, Color::Black, to @ (7, _)) => Some(to),
+                    (PieceType::Pawn, Color::White, to @ (0, _)) => Some(to),
+                    _ => None
+                }
+            },
+            Move::Move(from, to) => {
+                let mut p = self.board[from.0 as usize][from.1 as usize].clone();
+                p.set_position(to.clone());
+                self.faction.upsert(p.clone());
+                self.board[from.0 as usize][from.1 as usize] = Piece::Empty;
+                let piece_color = p.color().unwrap();
+                let piece_type = p.get_type().unwrap();
+                self.board[to.0 as usize][to.1 as usize] = p;
+                self.update_controlled_squares(piece_color.clone());
+                match (piece_type, piece_color, to) {
+                    (PieceType::Pawn, Color::Black, to @ (7, _)) => Some(to),
+                    (PieceType::Pawn, Color::White, to @ (0, _)) => Some(to),
+                    _ => None
+                }
+            },
+            Move::EnPassant(from, to) => {
+                let mut p = self.board[from.0 as usize][from.1 as usize].clone();
+                p.set_position(to.clone());
+                self.faction.upsert(p.clone());
+                self.board[from.0 as usize][from.1 as usize] = Piece::Empty;
+                self.board[from.0 as usize][to.1 as usize] = Piece::Empty;
+                let piece_color = p.color().unwrap();
+                self.board[to.0 as usize][to.1 as usize] = p;
+                self.update_controlled_squares(piece_color);
+                None
+            },
+            Move::KingsideCastle(faction) => {
+                match faction {
+                    Color::White => {
+                        self.castle((7, 4), (7, 6), (7, 7), (7, 5))
                     }
-                    self.update_controlled_squares(faction);
-                },
-                Move::QueensideCastle(faction) => {
-                    match faction {
-                        Color::White => {
-                            self.castle((7, 4), (7, 2), (7, 0), (7, 3))
-                        }
-                        Color::Black => {
-                            self.castle((0, 3), (0, 5), (0, 7), (0, 4))
-                        }
+                    Color::Black => {
+                        self.castle((0, 3), (0, 1), (0, 0), (0, 2))
                     }
-                    self.update_controlled_squares(faction);
-                },
-                _ => {}
-                // We update the controled squares for each faction
+                }
+                self.update_controlled_squares(faction);
+                None
+            },
+            Move::QueensideCastle(faction) => {
+                match faction {
+                    Color::White => {
+                        self.castle((7, 4), (7, 2), (7, 0), (7, 3))
+                    }
+                    Color::Black => {
+                        self.castle((0, 3), (0, 5), (0, 7), (0, 4))
+                    }
+                }
+                self.update_controlled_squares(faction);
+                None
+            },
+            Move::Promote(from, to_type) => {
+                let piece = &self.board[from.0 as usize][from.1 as usize];
+                let piece_color = piece.color().unwrap();
+                let piece_id = piece.get_id().unwrap();
+                self.faction.delete(piece);
+                self.board[from.0 as usize][from.1 as usize] = Piece::new(from, piece_color, to_type.into(), piece_id);
+                None
             }
+            _ => None
+            // We update the controled squares for each faction
         }
     }
 
@@ -333,9 +410,20 @@ impl ChessBoard {
         let mut repr = WebappRepr::new();
         for i in 0..8 {
             for j in 0..8 {
-                repr.board[i][j] = self.board[i][j].webapp_repr();
+                let mut cell_repr = self.board[i][j].webapp_repr();
+                let white_controll = self.faction.is_controlled(&(i as i8, j as i8), &Color::White);
+                let black_controll = self.faction.is_controlled(&(i as i8, j as i8), &Color::Black);
+
+                match (white_controll, black_controll) {
+                    (true, true) => cell_repr.controll = Some("BOTH".into()),
+                    (false, true) => cell_repr.controll = Some("WHITE".into()),
+                    (true, false) => cell_repr.controll = Some("BLACK".into()),
+                    _ => {}
+                }
+                repr.board[i][j] = cell_repr;
             }
         }
         repr
     }
 }
+
