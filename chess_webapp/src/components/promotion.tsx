@@ -2,7 +2,7 @@ import { height } from "@mui/system"
 import * as React from "react"
 import Piece from "./piece"
 
-const triggerPromotion = (piece_type: string, color: "WHITE" | "BLACK", set_board: any) => {
+const triggerPromotion = (piece_type: string, color: "WHITE" | "BLACK", set_game_state: any) => {
     let body;
     try {
         body = JSON.stringify({
@@ -23,7 +23,7 @@ const triggerPromotion = (piece_type: string, color: "WHITE" | "BLACK", set_boar
             }
         }
     ).then(r => {
-        r.json().then(b => set_board(b.board))
+        r.json().then(b => set_game_state(b))
         .catch(e => console.log(e))
     })
     .catch(e => console.log(e))
@@ -31,7 +31,7 @@ const triggerPromotion = (piece_type: string, color: "WHITE" | "BLACK", set_boar
 
 export const Promotion = (props: {
     color: "WHITE" | "BLACK",
-    set_board?: any
+    set_game_state?: any
 }) => {
     return (
         <div style={{
@@ -41,16 +41,16 @@ export const Promotion = (props: {
             width: "560px",
             border: "2px solid black"
         }}>
-            <div onClick={() => triggerPromotion("Bishop", props.color, props.set_board)}>
+            <div onClick={() => triggerPromotion("Bishop", props.color, props.set_game_state)}>
                 <Piece name="BISHOP" color={props.color}/>
             </div>
-            <div onClick={() => triggerPromotion("Knight", props.color, props.set_board)}>
+            <div onClick={() => triggerPromotion("Knight", props.color, props.set_game_state)}>
                 <Piece name="KNIGHT" color={props.color} />
             </div>
-            <div onClick={() => triggerPromotion("Rook", props.color, props.set_board)}>
+            <div onClick={() => triggerPromotion("Rook", props.color, props.set_game_state)}>
                 <Piece name="ROOK" color={props.color} />
             </div>
-            <div onClick={() => triggerPromotion("Queen", props.color, props.set_board)}>
+            <div onClick={() => triggerPromotion("Queen", props.color, props.set_game_state)}>
                 <Piece name="QUEEN" color={props.color} />
             </div>
         </div>

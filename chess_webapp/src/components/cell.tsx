@@ -15,7 +15,7 @@ export const Cell = (props: {
     threatened?: boolean,
     controll?: string,
     show_controll: boolean,
-    set_board?: any
+    set_game_state?: any
 }) => {
     console.log("piece props: ", props.piece)
     let controll = "";
@@ -52,7 +52,7 @@ export const Cell = (props: {
                         })
                         .then(
                             v => v.json()
-                                  .then(d => props.set_board(d.board))
+                                  .then(d => props.set_game_state(d))
                                   .catch(e => {console.log(e)})
                         )
                         .catch(e => {console.log(e)})

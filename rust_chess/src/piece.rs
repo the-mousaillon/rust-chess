@@ -177,10 +177,41 @@ impl Piece {
                     if let Move::Move(_, to) = m {
                         controlled.push(to)
                     }
+                    if let Move::Defend(p) = m {
+                        controlled.push(p)
+                    }
                 }
             }
         }
         controlled
+    }
+
+    pub fn gen_moves_check(&self, board: &ChessBoard, check: bool, attack_vectors: &Vec<HashSet<Position>>) -> Vec<Move> {
+        if !check {
+            return self.gen_moves(board)
+        }
+
+        match self {
+            Piece::King(k) => k.gen_moves(board),
+            Piece::Empty => vec!(),
+            other @ _ if attack_vectors.len() == 1 => {
+                other.gen_moves(board)
+                    .into_iter()
+                    .filter(|m| {
+                        match m {
+                            Move::Move(_, to) => {
+                                attack_vectors.iter().find(|hm| hm.contains(to)).is_some()
+                            },
+                            Move::Take(_, to) => {
+                                attack_vectors.iter().find(|hm| hm.contains(to)).is_some()
+                            },
+                            _ => false
+                        }
+                    })
+                    .collect()
+            },
+            _ => vec!()
+        }
     }
 
     pub fn gen_moves(&self, board: &ChessBoard) -> Vec<Move> {
@@ -328,6 +359,7 @@ pub enum Move {
     KingsideCastle(Color),
     QueensideCastle(Color),
     Promote(Position, CanPromoteTo),
+    Defend(Position),
     Invalid
 }
 
@@ -338,13 +370,15 @@ impl Move {
             return Move::Invalid
         }
         let dst = &board.board[to.0 as usize][to.1 as usize];
-        // If we try to move in our own piece, the move is invalid
+
         if !dst.is_empty() && (dst.color().unwrap() == p.color()) {
-            return Move::Invalid
+            return Move::Defend(to)
         }
         // Otherwise we either move or take
         match dst {
             Piece::Empty => Self::Move(p.position(), to),
+            // We allow to pass through enemy king for controlled squares
+            Piece::King(k) if k.color != p.color() => Self::Move(p.position(), to),
             p_ => Move::Take(p.position(), to),
         }
     }
@@ -394,9 +428,24 @@ impl Move {
         }
     }
 
+    pub fn is_promotable(&self, board: &ChessBoard) -> bool {
+        match self {
+            Self::Move(_, to) => {
+                let dst = &board.board[to.0 as usize][to.1 as usize];
+                match (dst.get_type(), dst.color(), to) {
+                    (Some(PieceType::Pawn), Some(Color::Black), (0, _)) => true,
+                    (Some(PieceType::Pawn), Some(Color::White), (7, _)) => true,
+                    _ => false
+                }
+            },
+            _ => false
+        }
+    }
+
     pub fn is_valid(&self) -> bool {
         match self {
             Self::Invalid => false,
+            Self::Defend(_) => false,
             _ => true
         }
     }
@@ -413,10 +462,14 @@ fn diag_line_generic(p: &impl PieceCommon, board: &ChessBoard, n_travel: i8, pos
             },
             Move::Take(_, _) => {
                 moves.push(move_);
-                break
+                break;
             },
             Move::Invalid => {
-                break
+                break;
+            },
+            Move::Defend(_) => {
+                moves.push(move_);
+                break;
             }
             _ => panic!("This case shoud never happn, check the code")
         }
@@ -985,28 +1038,48 @@ pub struct King {
     id: usize,
     position: Position,
     has_moved: bool,
+    pub check: bool,
+    pub direct_attacks: Vec<HashSet<Position>>
 }
 
 impl King {
-    fn generic_attack_vector(&self, board: &mut ChessBoard, direction: &VectorDirection) {
+    fn generic_attack_vector(self_pos: Position, board: &mut ChessBoard, direction: &VectorDirection) {
         let mut current_defender_pos: Position = (-1, -1);
         let mut n_defenders = 0;
-        let mut pos = self.position();
+        let dst = &board.board[self_pos.0 as usize][self_pos.1 as usize];
+        let mut pos = dst.position().unwrap();
+        let color = dst.color().unwrap();
         let dir_vec = direction.dir_vec();
+        let mut curr_vec = HashSet::new();
         loop {
             pos = (pos.0 + dir_vec.0, pos.1 + dir_vec.1);
             if pos.0 < 0 || pos.0 > 7 || pos.1 < 0 || pos.1 > 7 {
                 break;
             }
+            curr_vec.insert(pos.clone());
             let dst = &board.board[pos.0 as usize][pos.1 as usize];
             match dst.color() {
-                Some(c) if c == self.color => {
+                Some(c) if c == color => {
                     n_defenders += 1;
                     current_defender_pos = dst.position().unwrap();
                 },
-                Some(c) if c != self.color && n_defenders == 1 => {
+                // A pin
+                Some(c) if c != color && n_defenders == 1 => {
                     if dst.can_attack(&direction) {
                         board.board[current_defender_pos.0 as usize][current_defender_pos.1 as usize].set_attack_vector(Some(direction.clone()));
+                    }
+                    break;
+                }
+                // A check
+                Some(c) if c != color && n_defenders == 0 => {
+                    if dst.can_attack(&direction) {
+                        match board.board[self_pos.0 as usize][self_pos.1 as usize] {
+                            Piece::King(ref mut k) => {
+                                k.check = true;
+                                k.direct_attacks.push(curr_vec);
+                            },
+                            _ => panic!("no king")
+                        };
                     }
                     break;
                 }
@@ -1018,10 +1091,78 @@ impl King {
         }
     }
 
+    pub fn self_by_pos<'a>(pos: &Position, board: &'a mut ChessBoard) -> &'a mut Self {
+        match board.board[pos.0 as usize][pos.1 as usize] {
+            Piece::King(ref mut k) => k,
+            _ => panic!("There should always be two kings")
+        }
+    }
+
+    // if we have a knight attack, we can only take the knight of 
+    pub fn check_for_knight_and_pawn_attack(self_pos: &Position, board: &mut ChessBoard) {
+        // Pawn checking
+        let king_color = King::self_by_pos(self_pos, board).color();
+        let direction = if king_color == Color::White {-1} else {1};
+        let pos1 = (self_pos.0 + direction, self_pos.1 - 1);
+        let pos2 = (self_pos.0 + direction, self_pos.1 + 1);
+        for pos in [pos1, pos2] {
+            if pos.0 < 0 || pos.0 > 7 || pos.1 < 0 || pos.1 > 7 {
+                continue
+            }
+            match board.board[pos.0 as usize][pos.1 as usize] {
+                Piece::Pawn(ref p) if p.color() != king_color => {
+                    let king_mut = King::self_by_pos(self_pos, board);
+                    king_mut.check = true;
+                    king_mut.direct_attacks.push(HashSet::from_iter([pos]));
+                    // Impossible to have both a pawn and a knight attack
+                    return
+                },
+                _ => {}
+            }
+        }
+        // Knight checking
+        let knight_possible_pos = [
+            (self_pos.0 - 2, self_pos.1 - 1),
+            (self_pos.0 - 2, self_pos.1 + 1),
+            (self_pos.0 + 2, self_pos.1 - 1),
+            (self_pos.0 + 2, self_pos.1 + 1),
+            (self_pos.0 - 1, self_pos.1 - 2),
+            (self_pos.0 - 1, self_pos.1 + 2),
+            (self_pos.0 + 1, self_pos.1 - 2),
+            (self_pos.0 + 1, self_pos.1 + 2),
+        ];
+        for pos in knight_possible_pos {
+            if pos.0 < 0 || pos.0 > 7 || pos.1 < 0 || pos.1 > 7 {
+                continue
+            }
+            match board.board[pos.0 as usize][pos.1 as usize] {
+                Piece::Knight(ref kn) if kn.color() != king_color => {
+                    let king_mut = King::self_by_pos(self_pos, board);
+                    king_mut.check = true;
+                    king_mut.direct_attacks.push(HashSet::from_iter([pos]));
+                    break;
+                }
+                _ => {}
+            }
+        }
+    }
+
     // Add the pin vectors to pieces
-    pub fn gen_attack_vectors(&self, board: &mut ChessBoard) {
+    // We also add directly attacking pieces
+    // If the attacking piece is not a knight: we set a vector otherwise, we set 
+    // If two attackers --> move king into non controlled territory
+    // If 1 attacker && knight --> gen all moves on the vector / take of the offending piece
+    pub fn gen_attack_vectors(self_pos: Position, board: &mut ChessBoard) {
+        match board.board[self_pos.0 as usize][self_pos.1 as usize] {
+            Piece::King(ref mut k) => {
+                k.direct_attacks.clear();
+                k.check = false;
+            },
+            _ => panic!("no king")
+        };
+        Self::check_for_knight_and_pawn_attack(&self_pos, board);
         for direction in VectorDirection::all_directions().iter() {
-            self.generic_attack_vector(board, direction)
+            Self::generic_attack_vector(self_pos, board, direction)
         }
     }
 }
@@ -1032,7 +1173,9 @@ impl PieceCommon for King {
             color: color,
             id: id,
             position: p,
-            has_moved: false
+            has_moved: false,
+            check: false,
+            direct_attacks: vec!()
         }
     }
 
@@ -1050,6 +1193,7 @@ impl PieceCommon for King {
                 .into_iter()
                 .filter(|m| match m {
                     Move::Move(_,  to) => !board.faction.is_controlled(to, &self.color().other()),
+                    Move::Take(_, to) => !board.faction.is_controlled(to, &self.color().other()),
                     _ => true
                 })
                 .collect()
