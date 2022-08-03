@@ -70,7 +70,7 @@ pub fn initial_board() -> Vec<Vec<Piece>> {
     board[0][7] = Piece::Rook(Rook::new((0, 7), Color::Black, 8));
     // Pawns
     for i in 0..8 {
-        board[1][i] = Piece::Pawn(Pawn::new((1, i as i8), Color::Black, i*3));
+        board[1][i] = Piece::Pawn(Pawn::new((1, i as i8), Color::Black, i * 30));
     }
 
     // White faction
@@ -85,7 +85,7 @@ pub fn initial_board() -> Vec<Vec<Piece>> {
     board[7][7] = Piece::Rook(Rook::new((7, 7), Color::White, 16));
     //Pawns
     for i in 0..8 {
-        board[6][i] = Piece::Pawn(Pawn::new((6, i as i8), Color::White, i * 4));
+        board[6][i] = Piece::Pawn(Pawn::new((6, i as i8), Color::White, i * 40));
     }
 
     board
@@ -295,7 +295,7 @@ impl ChessBoard {
                     .flat_map(|p| {
                         self.board[p.0 as usize][p.1 as usize].gen_moves_check(self, check, attack_vectors)
                     })
-                    .filter(|m| m.is_valid())
+                    .filter(|m| m.is_valid(self))
                     .collect()
             },
             Color::White => {
@@ -304,7 +304,7 @@ impl ChessBoard {
                     .flat_map(|p| {
                         self.board[p.0 as usize][p.1 as usize].gen_moves_check(self, check, attack_vectors)
                     })
-                    .filter(|m| m.is_valid())
+                    .filter(|m| m.is_valid(self))
                     .collect()
             }
         }
@@ -404,8 +404,10 @@ impl ChessBoard {
             },
             Move::EnPassant(from, to) => {
                 let mut p = self.board[from.0 as usize][from.1 as usize].clone();
+                let piece_to_delete = &self.board[from.0 as usize][to.1 as usize];
                 p.set_position(to.clone());
                 self.faction.upsert(p.clone());
+                self.faction.delete(piece_to_delete);
                 self.board[from.0 as usize][from.1 as usize] = Piece::Empty;
                 self.board[from.0 as usize][to.1 as usize] = Piece::Empty;
                 let piece_color = p.color().unwrap();

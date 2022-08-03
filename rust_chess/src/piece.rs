@@ -442,10 +442,13 @@ impl Move {
         }
     }
 
-    pub fn is_valid(&self) -> bool {
+    pub fn is_valid(&self, board: &ChessBoard) -> bool {
         match self {
             Self::Invalid => false,
             Self::Defend(_) => false,
+            Self::Take(_, to) => {
+                board.board[to.0 as usize][to.1 as usize].get_type() != Some(PieceType::King)
+            }
             _ => true
         }
     }

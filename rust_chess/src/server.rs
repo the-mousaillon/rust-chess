@@ -4,7 +4,7 @@ use actix::prelude::*;
 use actix_web::web;
 use serde::{Serialize, Deserialize};
 
-use crate::{piece::{Color, Position, Piece, Move, PieceType, CanPromoteTo, King}, chessbord::{WebappRepr, ChessBoard, apply_markers}, game::{GameEngine, Game, Play, Promote, PlayerVsIa, GameWebappRepr}, ai::{DummyRandomIA, Ai}};
+use crate::{piece::{Color, Position, Piece, Move, PieceType, CanPromoteTo, King}, chessbord::{WebappRepr, ChessBoard, apply_markers}, game::{GameEngine, Game, Play, Promote, PlayerVsIa, GameWebappRepr}, ai::{DummyRandomIA, Ai, BestPlayDephtOneAi, MiniMaxAi}};
 
 struct ChessActor {
     game: Option<Box<dyn Game>>
@@ -42,9 +42,13 @@ impl Handler<BoardActions> for ChessActor {
             BoardActions::Setup(mode) => {
                 match mode {
                     GameMode::PlayerVsPlayer => todo!(),
-                    GameMode::PlayerVsAi(player_color) => {
-                        let ai = DummyRandomIA::new(player_color.other());
-                        let game = PlayerVsIa::new(player_color, Box::new(ai));
+                    GameMode::PlayerVsAi(player_color, ai_implementation) => {
+                        let ai = match ai_implementation {
+                            AiImplementation::DummyAi => Box::new(DummyRandomIA::new(player_color.other())) as Box<dyn Ai>,
+                            AiImplementation::BestPlayDephtOneAi => Box::new(BestPlayDephtOneAi::new(player_color.other())) as Box<dyn Ai>,
+                            AiImplementation::MiniMaxAi => Box::new(MiniMaxAi::new(player_color.other())) as Box<dyn Ai>,
+                        };
+                        let game = PlayerVsIa::new(player_color, ai);
                         self.game = Some(Box::new(game));
                         Ok(self.game.as_ref().unwrap().webapp_repr())
                     },
@@ -84,9 +88,18 @@ async fn reset_board(data: web::Data<AppData>, action: web::Json<BoardActions>) 
 
 #[derive(Serialize, Deserialize, Message)]
 #[rtype(result="Result<GameWebappRepr, ()>")]
+pub enum AiImplementation {
+    DummyAi,
+    BestPlayDephtOneAi,
+    MiniMaxAi
+}
+
+
+#[derive(Serialize, Deserialize, Message)]
+#[rtype(result="Result<GameWebappRepr, ()>")]
 pub enum GameMode {
     PlayerVsPlayer,
-    PlayerVsAi(Color),
+    PlayerVsAi(Color, AiImplementation),
     AiVsAi
 }
 
@@ -147,7 +160,7 @@ pub async fn run_dev_app() -> std::io::Result<()> {
 
 #[test]
 fn test_ser() {
-    let game_setup = BoardActions::Setup(GameMode::PlayerVsAi(Color::White));
+    let game_setup = BoardActions::Setup(GameMode::PlayerVsAi(Color::White, AiImplementation::BestPlayDephtOneAi));
     let ev = serde_json::to_string(&game_setup).unwrap();
     println!("ev: {}", ev);
 

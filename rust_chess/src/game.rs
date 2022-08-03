@@ -17,6 +17,7 @@ pub struct GameEngine {
     pub turn: usize,
     pub promotion_opt: Option<(i8, i8)>,
     pub check: bool,
+    pub checkmate: bool,
     pub attack_vector: Vec<HashSet<Position>>
 }
 
@@ -30,6 +31,7 @@ impl GameEngine {
             turn: 0,
             promotion_opt: None,
             check: false,
+            checkmate: false,
             attack_vector: vec!()
         }
     }

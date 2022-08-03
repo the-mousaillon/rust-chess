@@ -42,7 +42,7 @@ export const Game = (props: {}) => {
     let next_board = useKeyPressed("ArrowRight")
     React.useEffect(() => {
         try {
-            let body = JSON.stringify({Setup:{PlayerVsAi:"White"}})
+            let body = JSON.stringify({Setup:{PlayerVsAi:["White","MiniMaxAi"]}})
             fetch("http://localhost:8005/api/set_play_mode", {
                 method: "POST",
                 mode: "cors",
