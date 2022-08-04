@@ -225,10 +225,48 @@ pub enum GameEvent {
     Promote(Promote)
 }
 
-pub struct IaVsIa {
+pub struct AiVsAi {
     game_engine: GameEngine,
-    min_ia_time_to_play: usize,
-    max_ia_time_to_play: usize,
+    black_ai: Box<dyn Ai>,
+    white_ai: Box<dyn Ai>
+}
+
+
+impl AiVsAi {
+    pub fn new(black_ai: Box<dyn Ai>, white_ai: Box<dyn Ai>) -> Self {
+        Self { game_engine: GameEngine::new(), black_ai: black_ai, white_ai: white_ai }
+    }
+    pub fn ai_play(&mut self) {
+        let ai_moves = match self.game_engine.current_player {
+            Color::Black => self.black_ai.play(&self.game_engine),
+            Color::White => self.white_ai.play(&self.game_engine)
+        };
+        self.game_engine.play_bypass(ai_moves);
+        self.game_engine.finish_turn();
+        self.game_engine.prepare_new_turn();
+    }
+}
+
+
+impl Game for AiVsAi {
+    fn play(&mut self, m: Play) {
+        self.ai_play();
+    }
+
+    fn promote(&mut self, p: Promote) {
+        todo!()
+    }
+
+    fn webapp_repr(&self) -> GameWebappRepr {
+        let board_repr = self.game_engine.to_webapp();
+        let board_history = self.game_engine.board_history.iter().map(|b| b.to_webapp()).collect();
+        GameWebappRepr {
+            current_player: self.game_engine.current_player.clone(),
+            turn: self.game_engine.turn,
+            board: board_repr,
+            board_history: board_history,
+        }
+    }
 }
 
 

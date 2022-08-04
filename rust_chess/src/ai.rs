@@ -151,8 +151,23 @@ impl MiniMaxAi {
         
         // Otherwise we keep searching the tree
         let possible_moves = engine.gen_all_moves();
+        
+        if possible_moves.len() == 0 {
+            // If checkmate
+            if engine.check {
+                return match is_max {
+                    true => -f64::INFINITY,
+                    false => f64::INFINITY
+                }
+            }
+            // if draw
+            else {
+                return 0.0
+            }
+        }
         for m in possible_moves {
             let mut engine_for_move = engine.clone();
+            println!("move: {:?}", m);
             engine_for_move.play_once(m);
             engine_for_move.finish_turn();
             engine_for_move.prepare_new_turn();
@@ -188,6 +203,9 @@ impl Ai for MiniMaxAi {
     fn play(&mut self, engine: &GameEngine) -> Vec<Move> {
         let mut ai_moves = vec!();
         let moves_to_evaluate = engine.gen_all_moves();
+        if moves_to_evaluate.len() == 0 {
+            return ai_moves;
+        }
         let scores: Vec<_> = moves_to_evaluate
             .par_iter()
             .map(|m| {

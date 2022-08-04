@@ -1,3 +1,4 @@
+import { Button } from "@mui/material"
 import * as React from "react"
 import { ChessBoard } from "./chessboard"
 
@@ -6,6 +7,31 @@ interface GameState {
     turn: number,
     board?: any,
     board_history: any[]
+}
+
+
+const continuous_ai_play = (set_game_state) => {
+    fetch("http://localhost:8005/api/play", {
+        method: "POST",
+        mode: "cors",
+        headers: {
+            "content-type": "application/json"
+        },
+        body: JSON.stringify({x: 0, y: 0})
+    })
+    .then(
+        v => v.json()
+            .then(d => {
+                console.log("game state", d)
+                set_game_state(d)
+                setTimeout(() => {
+                    continuous_ai_play(set_game_state)
+                }, 500);
+                
+            })
+            .catch(e => {console.log(e)})
+    )
+    .catch(e => {console.log(e)})
 }
 
 function useKeyPressed(key: string) {
@@ -42,7 +68,7 @@ export const Game = (props: {}) => {
     let next_board = useKeyPressed("ArrowRight")
     React.useEffect(() => {
         try {
-            let body = JSON.stringify({Setup:{PlayerVsAi:["White","MiniMaxAi"]}})
+            let body = JSON.stringify({Setup:{AiVsAi:"MiniMaxAi"}})
             fetch("http://localhost:8005/api/set_play_mode", {
                 method: "POST",
                 mode: "cors",
@@ -92,10 +118,13 @@ export const Game = (props: {}) => {
         board = game_state.board_history[game_state.turn - offset]
     }
     return (
-        <ChessBoard 
-            board={board}
-            remote_engine={true}
-            set_game_state={set_game_state}
-        />
+        <div>
+            <Button variant="outlined" onClick={() => continuous_ai_play(set_game_state)}>Ai play</Button>
+            <ChessBoard 
+                board={board}
+                remote_engine={true}
+                set_game_state={set_game_state}
+            />
+        </div>
     )
 }
