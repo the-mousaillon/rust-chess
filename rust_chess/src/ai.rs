@@ -11,6 +11,10 @@ pub trait Ai {
 
     fn new(machine_player: Color) -> Self
     where Self: Sized;
+
+    fn set_depht(&mut self, depht: usize) {
+        todo!()
+    }
 }
 
 
@@ -136,18 +140,51 @@ pub struct MiniMaxAi {
 
 impl MiniMaxAi {
     // Handling promotion will suck
-    fn min_max(&self, engine: &GameEngine, propagated_val: Option<f64>, depht: usize, is_max: bool) -> f64 {
+    fn mini_max_iterative_deepening(
+        &self,
+        engine: &GameEngine
+    ) -> f64 {
+        let mut transposition_table = HashMap::new();
+        let mut eval = 0.0;
+        let alpha = -f64::INFINITY;
+        let beta = f64::INFINITY;
+        for i in 1..=self.depth {
+            eval = self.mini_max(engine, 1, i, false, alpha, beta, &mut transposition_table);
+        }
+        eval
+    }
+
+    fn mini_max(
+        &self,
+        engine: &GameEngine,
+        depht: usize,
+        max_depht: usize,
+        is_max: bool,
+        alpha: f64,
+        beta: f64,
+        transposition_table: &mut HashMap<(String, usize), f64>
+    ) -> f64 {
+        let curr_board_key = engine.get_board_as_key();
+        // If the move is in the transposition table, we return it
+        println!("TT size: {}", transposition_table.len());
+        match transposition_table.get(&(curr_board_key, max_depht - depht)) {
+            Some(v) => {
+                println!("using ttable !! ");
+                return *v
+            }
+            _ => {}
+        }
         // If we are at max depht, we return the position evaluation
-        if depht == self.depth {
-            return self.eval_position(&engine.board)
+        if depht == max_depht {
+            let eval = self.eval_position(&engine.board);
+            transposition_table.insert((engine.get_board_as_key(), max_depht - depht), eval);
+            return eval
         }
 
         let mut curr_eval: f64 = match is_max {
             true => -f64::INFINITY,
             false => f64::INFINITY,
         };
-
-        let mut new_propagated_val = None;
         
         // Otherwise we keep searching the tree
         let possible_moves = engine.gen_all_moves();
@@ -167,34 +204,33 @@ impl MiniMaxAi {
         }
         for m in possible_moves {
             let mut engine_for_move = engine.clone();
-            println!("move: {:?}", m);
             engine_for_move.play_once(m);
             engine_for_move.finish_turn();
             engine_for_move.prepare_new_turn();
-            let position_evaluation = self.min_max(&engine_for_move, new_propagated_val, depht + 1, !is_max);
-            match (is_max, position_evaluation > curr_eval, propagated_val) {
-                (true, _, Some(v)) if v < curr_eval => {
-                    // alpha-beta pruning
-                    return propagated_val.unwrap()
-                },
-                (false, _, Some(v)) if v < curr_eval => {
-                    // alpha-beta pruning
-                    return propagated_val.unwrap()
-                }, 
-                (true, true, _) => {
+            let position_evaluation = self.mini_max(&engine_for_move, depht + 1, max_depht, !is_max, alpha, beta, transposition_table);
+            match (is_max, position_evaluation > curr_eval) {
+                // (true, _, Some(v)) if v > curr_eval => {
+                //     // alpha-beta pruning
+                //     return v
+                // },
+                // (false, _, Some(v)) if v < curr_eval => {
+                //     // alpha-beta pruning
+                //     return v
+                // }, 
+                (true, true) => {
                     // keep exploring, max player
                     curr_eval = position_evaluation;
-                    new_propagated_val = Some(curr_eval);
                 }
-                (false, false, _) => {
+                (false, false) => {
                     // keep exploring, min player
                     curr_eval = position_evaluation;
-                    new_propagated_val = Some(curr_eval);
                 },
                 _ => {}
             }
 
         }
+        transposition_table.insert((engine.get_board_as_key(), max_depht - depht), curr_eval);
+        //println!("tsize: {}", transposition_table.len());
         curr_eval
     }
 }
@@ -213,7 +249,7 @@ impl Ai for MiniMaxAi {
                 evaluation_engine.play_once(m.clone());
                 evaluation_engine.finish_turn();
                 evaluation_engine.prepare_new_turn();
-                let evaluation = self.min_max(&evaluation_engine, None, 1, false);
+                let evaluation = self.mini_max_iterative_deepening(&evaluation_engine);
                 evaluation
             })
             .collect();
@@ -225,10 +261,21 @@ impl Ai for MiniMaxAi {
                 if v > &v_acc {
                     (i, *v)
                 }
+                // If two moves are equal we randomize
+                else if v == &v_acc {
+                    let mut rng = thread_rng();
+                    if rng.gen::<f64>() < 0.5 {
+                        (i_acc, v_acc)
+                    }
+                    else {
+                        (i, *v)
+                    }
+                }
                 else {
                     (i_acc, v_acc)
                 }
             });
+        println!("eval: {}", best_move.1);
         ai_moves.push(moves_to_evaluate[best_move.0].clone());
         ai_moves
     }
@@ -263,5 +310,9 @@ impl Ai for MiniMaxAi {
             ]),
             depth: 3
         }    
+    }
+
+    fn set_depht(&mut self, depht: usize) {
+        self.depth = depht;
     }
 }

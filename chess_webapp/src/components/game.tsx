@@ -63,12 +63,19 @@ function useKeyPressed(key: string) {
 export const Game = (props: {}) => {
     let [game_state, set_game_state] = React.useState()
     let [offset, set_offset] = React.useState(0)
-    let [call_once, set_call_once] = React.useState(true)
+    let [mode, set_mode] = React.useState()
     let prev_board = useKeyPressed("ArrowLeft")
     let next_board = useKeyPressed("ArrowRight")
+    React.useEffect(() => set_mode("Ai vs Ai"), [])
     React.useEffect(() => {
         try {
-            let body = JSON.stringify({Setup:{AiVsAi:"MiniMaxAi"}})
+            let body;
+            if (mode == "Ai vs Ai") {
+                body = JSON.stringify({Setup:{AiVsAi:["MiniMaxAi", "MiniMaxAi", 3, 2]}})
+            }
+            else if (mode == "Ai vs Player") {
+                body = JSON.stringify({Setup:{PlayerVsAi:["White", "MiniMaxAi"]}})
+            }
             fetch("http://localhost:8005/api/set_play_mode", {
                 method: "POST",
                 mode: "cors",
@@ -87,10 +94,10 @@ export const Game = (props: {}) => {
             )
             .catch(e => {console.log(e)})
         }
-        catch {
-
+        catch (e) {
+            console.log(e)
         }
-    }, [])
+    }, [mode])
     console.log("true game state: ", game_state)
     console.log("offset: ", offset, "next_board", next_board, "prev_board", prev_board)
 
@@ -120,6 +127,9 @@ export const Game = (props: {}) => {
     return (
         <div>
             <Button variant="outlined" onClick={() => continuous_ai_play(set_game_state)}>Ai play</Button>
+            <Button variant="outlined" onClick={() => set_mode("Ai vs Ai")}>Ai VS Ai</Button>
+            <Button variant="outlined" onClick={() => set_mode("Ai vs Player")}>Ai VS Player</Button>
+            <span>Mode: {mode}</span>
             <ChessBoard 
                 board={board}
                 remote_engine={true}

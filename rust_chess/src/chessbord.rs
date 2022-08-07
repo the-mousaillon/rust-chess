@@ -253,16 +253,25 @@ impl ChessBoard {
             Color::Black => match self.faction.black_pieces_by_type.get(&PieceType::King).unwrap() {
                 pos => match self.board[pos.0 as usize][pos.1 as usize] {
                    Piece::King(ref k) => k.position(),
-                   _ => panic!("There should always be king on the board")
+                   _ => {
+                        self.pprint();
+                        panic!("There should always be king on the board")
+                   }
                 },
                 _ => panic!("There should always be king on the board")
             },
             Color::White => match self.faction.white_pieces_by_type.get(&PieceType::King).unwrap() {
                 pos => match self.board[pos.0 as usize][pos.1 as usize] {
                     Piece::King(ref k) => k.position(),
-                    _ => panic!("There should always be king on the board")
+                    _ => {
+                        self.pprint();
+                        panic!("There should always be king on the board")
+                    }
                  },
-                 _ => panic!("There should always be king on the board")
+                 _ => {
+                    self.pprint();
+                    panic!("There should always be king on the board")
+                 }
             }
         }
     }
@@ -286,6 +295,16 @@ impl ChessBoard {
         }
     }
 
+    pub fn get_board_as_key(&self) -> String {
+        let mut repr = String::new();
+        repr.reserve(64);
+        for i in 0..8 {
+            for j in 0..8 {
+                repr.push_str(self.board[i][j].emoji());
+            }
+        }
+        repr
+    }
     // !! The bord mutations have to be handled outside this function
     pub fn gen_all_moves(&self, player: &Color, check: bool, attack_vectors: &Vec<HashSet<Position>>) -> Vec<Move> {
         match player {

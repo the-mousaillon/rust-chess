@@ -46,6 +46,10 @@ impl GameEngine {
             .collect()
     }
 
+    pub fn get_board_as_key(&self) -> String {
+        self.board.get_board_as_key()
+    }
+
     pub fn rollback(&mut self) {
         self.turn -= 1;
         let board_rb = self.board_history.pop().unwrap();
@@ -57,6 +61,7 @@ impl GameEngine {
     }
 
     pub fn prepare_new_turn(&mut self) {
+        self.board.reset_pin_vectors(&self.current_player);
         let king_pos = self.board.locate_king(&self.current_player);
         King::gen_attack_vectors(king_pos, &mut self.board);
         let king = match self.board.board[king_pos.0 as usize][king_pos.1 as usize] {
@@ -133,9 +138,19 @@ impl PlayerVsIa {
 impl PlayerVsIa {
     pub fn ai_play(&mut self) {
         let ai_moves = self.ai.play(&self.game_engine);
-        self.game_engine.play_bypass(ai_moves);
-        self.game_engine.finish_turn();
-        self.game_engine.prepare_new_turn();
+        if ai_moves.len() == 0 {
+            if self.game_engine.check {
+                println!("Checkmate !!")
+            }
+            else {
+                println!("draw !")
+            }
+        }
+        else {
+            self.game_engine.play_bypass(ai_moves);
+            self.game_engine.finish_turn();
+            self.game_engine.prepare_new_turn();
+        }
     }
 }
 
@@ -241,9 +256,19 @@ impl AiVsAi {
             Color::Black => self.black_ai.play(&self.game_engine),
             Color::White => self.white_ai.play(&self.game_engine)
         };
-        self.game_engine.play_bypass(ai_moves);
-        self.game_engine.finish_turn();
-        self.game_engine.prepare_new_turn();
+        if ai_moves.len() == 0 {
+            if self.game_engine.check {
+                println!("Checkmate !!")
+            }
+            else {
+                println!("DRAWWW")
+            }
+        }
+        else {
+            self.game_engine.play_bypass(ai_moves);
+            self.game_engine.finish_turn();
+            self.game_engine.prepare_new_turn();
+        }   
     }
 }
 

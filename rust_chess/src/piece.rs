@@ -446,7 +446,7 @@ impl Move {
         match self {
             Self::Invalid => false,
             Self::Defend(_) => false,
-            Self::Take(_, to) => {
+            Self::Take(_, to) |  Self::Move(_, to) => {
                 board.board[to.0 as usize][to.1 as usize].get_type() != Some(PieceType::King)
             }
             _ => true

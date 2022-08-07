@@ -43,15 +43,18 @@ impl Handler<BoardActions> for ChessActor {
                 match mode {
                     GameMode::PlayerVsPlayer => todo!(),
                     GameMode::PlayerVsAi(player_color, ai_implementation) => {
-                        let ai= ai_implementation.instantiate(&player_color.other());
+                        let mut ai= ai_implementation.instantiate(&player_color.other());
+                        ai.set_depht(3);
                         let game = PlayerVsIa::new(player_color, ai);
                         self.game = Some(Box::new(game));
                         Ok(self.game.as_ref().unwrap().webapp_repr())
                     },
-                    GameMode::AiVsAi(ai_implementation) => {
-                        let black_ai = ai_implementation.instantiate(&Color::Black);
-                        let white_ai = ai_implementation.instantiate(&Color::White);
-                        let game = AiVsAi::new(white_ai, black_ai);
+                    GameMode::AiVsAi(white_ai_implementation, black_ai_implementation, white_depht, black_depht) => {
+                        let mut black_ai = black_ai_implementation.instantiate(&Color::Black);
+                        let mut white_ai = white_ai_implementation.instantiate(&Color::White);
+                        black_ai.set_depht(black_depht);
+                        white_ai.set_depht(white_depht);
+                        let game = AiVsAi::new(black_ai, white_ai);
                         self.game = Some(Box::new(game));
                         Ok(self.game.as_ref().unwrap().webapp_repr())
                     },
@@ -99,9 +102,9 @@ pub enum AiImplementation {
 impl AiImplementation {
     pub fn instantiate(&self, color: &Color) -> Box<dyn Ai> {
         match self {
-            AiImplementation::DummyAi => Box::new(DummyRandomIA::new(color.other())) as Box<dyn Ai>,
-            AiImplementation::BestPlayDephtOneAi => Box::new(BestPlayDephtOneAi::new(color.other())) as Box<dyn Ai>,
-            AiImplementation::MiniMaxAi => Box::new(MiniMaxAi::new(color.other())) as Box<dyn Ai>,
+            AiImplementation::DummyAi => Box::new(DummyRandomIA::new(color.clone())) as Box<dyn Ai>,
+            AiImplementation::BestPlayDephtOneAi => Box::new(BestPlayDephtOneAi::new(color.clone())) as Box<dyn Ai>,
+            AiImplementation::MiniMaxAi => Box::new(MiniMaxAi::new(color.clone())) as Box<dyn Ai>,
         }
     }
 }
@@ -112,7 +115,7 @@ impl AiImplementation {
 pub enum GameMode {
     PlayerVsPlayer,
     PlayerVsAi(Color, AiImplementation),
-    AiVsAi(AiImplementation)
+    AiVsAi(AiImplementation, AiImplementation, usize, usize)
 }
 
 
