@@ -40,6 +40,17 @@ pub enum CanPromoteTo {
     Queen
 }
 
+impl CanPromoteTo {
+    pub fn get_zobrist_id(&self) -> u64 {
+        match self {
+            Self::Bishop => 5,
+            Self::Rook => 2,
+            Self::Knight => 1,
+            Self::Queen => 3,
+        }
+    }
+}
+
 impl Into<PieceType> for CanPromoteTo {
     fn into(self) -> PieceType {
         match self {
@@ -61,6 +72,20 @@ pub enum PieceType {
     King,
     Bishop,
     Empty,
+}
+
+impl PieceType {
+    pub fn get_zobrist_id(&self) -> u64 {
+        match self {
+            &Self::Pawn => 0,
+            &Self::Knight => 1,
+            &Self::Rook => 2,
+            &Self::Queen => 3,
+            &Self::King => 4,
+            &Self::Bishop => 5,
+            &Self::Empty => panic!("Zobrist should never be called on empty square")
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -119,6 +144,14 @@ impl Piece {
             PieceType::Bishop => Self::Bishop(Bishop::new(from, color, id)),
             PieceType::Empty => Self::Empty,
         }
+    }
+
+    pub fn get_zobrist_id(&self) -> u64 {
+        let mut zobrist_id = unsafe { self.get_type().unwrap_unchecked().get_zobrist_id() };
+        if unsafe { self.color().unwrap_unchecked() }== Color::Black {
+            zobrist_id += 6;
+        }
+        zobrist_id
     }
 
     pub fn color(&self) -> Option<Color> {

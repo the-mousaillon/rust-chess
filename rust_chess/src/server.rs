@@ -44,7 +44,7 @@ impl Handler<BoardActions> for ChessActor {
                     GameMode::PlayerVsPlayer => todo!(),
                     GameMode::PlayerVsAi(player_color, ai_implementation) => {
                         let mut ai= ai_implementation.instantiate(&player_color.other());
-                        ai.set_depht(3);
+                        ai.set_depht(4);
                         let game = PlayerVsIa::new(player_color, ai);
                         self.game = Some(Box::new(game));
                         Ok(self.game.as_ref().unwrap().webapp_repr())

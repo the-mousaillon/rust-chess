@@ -71,7 +71,7 @@ export const Game = (props: {}) => {
         try {
             let body;
             if (mode == "Ai vs Ai") {
-                body = JSON.stringify({Setup:{AiVsAi:["MiniMaxAi", "MiniMaxAi", 3, 2]}})
+                body = JSON.stringify({Setup:{AiVsAi:["MiniMaxAi", "MiniMaxAi", 3, 3]}})
             }
             else if (mode == "Ai vs Player") {
                 body = JSON.stringify({Setup:{PlayerVsAi:["White", "MiniMaxAi"]}})

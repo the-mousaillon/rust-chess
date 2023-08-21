@@ -131,6 +131,16 @@ impl Ai for BestPlayDephtOneAi {
 }
 
 
+
+fn init_node_eval(is_max: bool) -> f64 {
+    if is_max {
+        return -f64::INFINITY;
+    }
+    else {
+        return f64::INFINITY;
+    }
+}
+
 // The classic minimax ai, much more powerfull ai
 pub struct MiniMaxAi {
     machine_player: Color,
@@ -142,96 +152,129 @@ impl MiniMaxAi {
     // Handling promotion will suck
     fn mini_max_iterative_deepening(
         &self,
-        engine: &GameEngine
-    ) -> f64 {
+        engine: &mut GameEngine,
+    ) -> (f64, i64) {
         let mut transposition_table = HashMap::new();
         let mut eval = 0.0;
-        let alpha = -f64::INFINITY;
-        let beta = f64::INFINITY;
-        for i in 1..=self.depth {
-            eval = self.mini_max(engine, 1, i, false, alpha, beta, &mut transposition_table);
+        let is_max= match engine.current_player {
+            Color::White => true, // white -> max
+            Color::Black => false, // black -> min
+        };
+        let init_alpha = -f64::INFINITY;
+        let init_beta = f64::INFINITY;
+        let mut called = 0;
+        let mut total_called = 0;
+        let mut called_max_depth = 0;
+        for i in 1..= self.depth {
+            // we actualy don't care about the eval, we just init it to the correct value based on the max_depth - 1 player
+            eval = self.mini_max(engine, 0, i, is_max, init_alpha, init_beta, &mut transposition_table, &mut called);
+            //println!("eval ({:?}) depht {}: {} | TT size:{} | called: {}", engine.current_player, i, eval, transposition_table.len(), &called);
+            total_called += called;
+            if i == self.depth {
+                called_max_depth += called;
+            }
+            called = 0;
         }
-        eval
+        (eval, called_max_depth)
     }
 
     fn mini_max(
         &self,
-        engine: &GameEngine,
+        engine: &mut GameEngine,
         depht: usize,
         max_depht: usize,
         is_max: bool,
-        alpha: f64,
-        beta: f64,
-        transposition_table: &mut HashMap<(String, usize), f64>
+        mut alpha: f64,
+        mut beta: f64,
+        transposition_table: &mut HashMap<String, (usize, f64)>,
+        called: &mut i64
     ) -> f64 {
+        *called += 1;
         let curr_board_key = engine.get_board_as_key();
         // If the move is in the transposition table, we return it
-        println!("TT size: {}", transposition_table.len());
-        match transposition_table.get(&(curr_board_key, max_depht - depht)) {
-            Some(v) => {
-                println!("using ttable !! ");
-                return *v
+        let relative_depht = max_depht - depht;
+        let transpo = transposition_table.get(&curr_board_key).cloned();
+        match transpo {
+            Some((d, v)) if d >= relative_depht => {
+               // println!("using ttable !! ");
+                return v
             }
             _ => {}
         }
         // If we are at max depht, we return the position evaluation
         if depht == max_depht {
             let eval = self.eval_position(&engine.board);
-            transposition_table.insert((engine.get_board_as_key(), max_depht - depht), eval);
+            //transposition_table.insert((curr_board_key, relative_depht), eval);
             return eval
         }
-
-        let mut curr_eval: f64 = match is_max {
-            true => -f64::INFINITY,
-            false => f64::INFINITY,
-        };
         
         // Otherwise we keep searching the tree
         let possible_moves = engine.gen_all_moves();
+
+        let mut new_engines: Vec<_> = possible_moves.into_iter().map(|m| {
+            let mut new_engine = engine.clone();
+            new_engine.play_once(m);
+            new_engine
+        }).collect();
+
+        // Sketchy move ordering to improve alpha beta pruning
+        // new_engines.sort_by(|m1, m2| {
+        //     let m1s = transposition_table.get(&m1.get_board_as_key()).unwrap_or(&(0usize, 0.0)).1;
+        //     let m2s = transposition_table.get(&m2.get_board_as_key()).unwrap_or(&(0usize, 0.0)).1;
+        //     let ord = m1s.total_cmp(&m2s);
+        //     match !is_max {
+        //         true => ord,
+        //         false => ord.reverse()
+        //     }
+        // });
         
-        if possible_moves.len() == 0 {
+        // alternative end conditions, checkmate or draw
+        if new_engines.len() == 0 {
             // If checkmate
             if engine.check {
-                return match is_max {
-                    true => -f64::INFINITY,
-                    false => f64::INFINITY
+                return match engine.current_player {
+                    Color::Black => f64::INFINITY,
+                    Color::White => -f64::INFINITY
                 }
             }
-            // if draw
+            // if draw (pat, no moves available and not in check)
             else {
                 return 0.0
             }
         }
-        for m in possible_moves {
-            let mut engine_for_move = engine.clone();
-            engine_for_move.play_once(m);
-            engine_for_move.finish_turn();
-            engine_for_move.prepare_new_turn();
-            let position_evaluation = self.mini_max(&engine_for_move, depht + 1, max_depht, !is_max, alpha, beta, transposition_table);
-            match (is_max, position_evaluation > curr_eval) {
-                // (true, _, Some(v)) if v > curr_eval => {
-                //     // alpha-beta pruning
-                //     return v
-                // },
-                // (false, _, Some(v)) if v < curr_eval => {
-                //     // alpha-beta pruning
-                //     return v
-                // }, 
-                (true, true) => {
-                    // keep exploring, max player
-                    curr_eval = position_evaluation;
+        
+        let mut curr_val = init_node_eval(is_max);
+        for mut new_engine in new_engines {
+            new_engine.finish_turn();
+            new_engine.prepare_new_turn();
+            if is_max {
+                let next_eval = self.mini_max(&mut new_engine, depht + 1, max_depht, !is_max, alpha, beta, transposition_table, called);
+                if next_eval >= curr_val {
+                    curr_val = next_eval;
                 }
-                (false, false) => {
-                    // keep exploring, min player
-                    curr_eval = position_evaluation;
-                },
-                _ => {}
+                if curr_val >= beta {
+                    break;
+                }
+                alpha = std::cmp::max_by(alpha, curr_val, |a, b| a.total_cmp(b));
             }
-
+            else {
+                let next_eval = self.mini_max(&mut new_engine, depht + 1, max_depht, !is_max, alpha, beta, transposition_table, called);
+                if next_eval <= curr_val {
+                    curr_val = next_eval;
+                }
+                if curr_val <= alpha {
+                    break;
+                }
+                beta = std::cmp::min_by(beta, curr_val, |a, b| a.total_cmp(b));
+            }
         }
-        transposition_table.insert((engine.get_board_as_key(), max_depht - depht), curr_eval);
-        //println!("tsize: {}", transposition_table.len());
-        curr_eval
+        match transpo {
+            Some((d, _)) if d >= relative_depht => {}
+            _ => {
+                transposition_table.insert(curr_board_key, (relative_depht, curr_val));
+            }
+        }
+        curr_val
     }
 }
 
@@ -242,6 +285,7 @@ impl Ai for MiniMaxAi {
         if moves_to_evaluate.len() == 0 {
             return ai_moves;
         }
+        let t = std::time::Instant::now();
         let scores: Vec<_> = moves_to_evaluate
             .par_iter()
             .map(|m| {
@@ -249,43 +293,53 @@ impl Ai for MiniMaxAi {
                 evaluation_engine.play_once(m.clone());
                 evaluation_engine.finish_turn();
                 evaluation_engine.prepare_new_turn();
-                let evaluation = self.mini_max_iterative_deepening(&evaluation_engine);
+                let evaluation = self.mini_max_iterative_deepening(&mut evaluation_engine);
                 evaluation
             })
             .collect();
-
+        let mult = match self.machine_player {
+            Color::Black => -1.0,
+            Color::White => 1.0
+        };
+        let mut total_called = 0;
         let best_move = scores
             .iter()
             .enumerate()
-            .fold((0, -f64::INFINITY), |(i_acc, v_acc), (i, v)| {
-                if v > &v_acc {
-                    (i, *v)
+            .fold((0, -f64::INFINITY), |(i_acc, v_acc), (i, (v, c))| {
+                total_called += c;
+                let vmult = mult * v;
+                if vmult > v_acc {
+                    (i, vmult)
                 }
                 // If two moves are equal we randomize
-                else if v == &v_acc {
+                else if vmult == v_acc {
                     let mut rng = thread_rng();
                     if rng.gen::<f64>() < 0.5 {
                         (i_acc, v_acc)
                     }
                     else {
-                        (i, *v)
+                        (i, vmult)
                     }
                 }
                 else {
                     (i_acc, v_acc)
                 }
             });
-        println!("eval: {}", best_move.1);
+        let elapsed = t.elapsed();
+        println!("elapsed: {:?}", elapsed);
+        println!("eval ({:?}): {} | n-nodes: {} | elapsed: {}, nodes/s: {}",
+            engine.current_player,
+            best_move.1,
+            total_called,
+            elapsed.as_secs(),
+            total_called as f64 / elapsed.as_secs_f64(),
+        );
         ai_moves.push(moves_to_evaluate[best_move.0].clone());
         ai_moves
     }
 
     fn eval_position(&self, board: &ChessBoard) -> f64 {
         let mut eval = 0.0;
-        let multi = match self.machine_player {
-            Color::Black => -1.0,
-            Color::White => 1.0
-        };
         for piece in board.faction.black_pieces.values() {
             let ptype = board.board[piece.0 as usize][piece.1 as usize].get_type().unwrap();
             eval -= self.piece_values.get(&ptype).unwrap();
@@ -294,7 +348,7 @@ impl Ai for MiniMaxAi {
             let ptype = board.board[piece.0 as usize][piece.1 as usize].get_type().unwrap();
             eval += self.piece_values.get(&ptype).unwrap();
         }
-        multi * eval
+        eval
     }
 
     fn new(machine_player: Color) -> Self {

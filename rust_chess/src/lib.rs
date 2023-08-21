@@ -3,3 +3,4 @@ pub mod piece;
 pub mod server;
 pub mod game;
 pub mod ai;
+pub mod zobrist;

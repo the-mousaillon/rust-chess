@@ -46,7 +46,7 @@ impl GameEngine {
             .collect()
     }
 
-    pub fn get_board_as_key(&self) -> String {
+    pub fn get_board_as_key(&mut self) -> String {
         self.board.get_board_as_key()
     }
 

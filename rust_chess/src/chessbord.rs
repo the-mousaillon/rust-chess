@@ -211,7 +211,8 @@ impl Faction {
 pub struct ChessBoard {
     pub board: Vec<Vec<Piece>>,
     pub faction: Faction,
-    pub headstart: Option<Position>
+    pub headstart: Option<Position>,
+    self_key: Option<String>
 }
 
 impl ChessBoard {
@@ -220,7 +221,8 @@ impl ChessBoard {
         let mut board = Self {
             board: board,
             faction: Faction::new_empty(),
-            headstart: None
+            headstart: None,
+            self_key: None
         };
         board.collect_factions();
         board
@@ -230,7 +232,8 @@ impl ChessBoard {
         Self {
             board: empty_board(),
             faction: Faction::new_empty(),
-            headstart: None
+            headstart: None,
+            self_key: None
         }
     }
 
@@ -295,16 +298,23 @@ impl ChessBoard {
         }
     }
 
-    pub fn get_board_as_key(&self) -> String {
-        let mut repr = String::new();
-        repr.reserve(64);
-        for i in 0..8 {
-            for j in 0..8 {
-                repr.push_str(self.board[i][j].emoji());
+    pub fn get_board_as_key(&mut self) -> String {
+        match self.self_key {
+            Some(ref key) => key.clone(),
+            None => {
+                let mut repr = String::new();
+                repr.reserve(64);
+                for i in 0..8 {
+                    for j in 0..8 {
+                        repr.push_str(self.board[i][j].emoji());
+                    }
+                }
+                self.self_key = Some(repr.clone());
+                repr
             }
         }
-        repr
     }
+
     // !! The bord mutations have to be handled outside this function
     pub fn gen_all_moves(&self, player: &Color, check: bool, attack_vectors: &Vec<HashSet<Position>>) -> Vec<Move> {
         match player {
@@ -380,6 +390,7 @@ impl ChessBoard {
 
     // returns the promotion position if the move leads to a promotion
     pub fn play_once(&mut self, m: Move) -> Option<Position> {
+        self.self_key = None;
         let mut headstart = None;
         let mut promotion = None;
         match m {
